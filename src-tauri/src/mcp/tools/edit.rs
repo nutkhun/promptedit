@@ -867,6 +867,8 @@ fn detach_audio(c: &Call) -> Out {
     Ok(json_text(json::clips(&order, &after)))
 }
 
+// Fresh random link ids, not `Id::default()` (the nil id), so the lint's suggestion would be wrong.
+#[allow(clippy::unwrap_or_default)]
 fn duplicate_clip(c: &Call) -> Out {
     let p = c.now();
     let clip = clip_arg(c.args, &p)?;

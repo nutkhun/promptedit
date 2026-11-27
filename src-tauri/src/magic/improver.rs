@@ -96,7 +96,7 @@ pub fn plan(p: &Project, analyses: &HashMap<Id, ClipAnalysis>, music: Option<&Mu
     let shot_score = |c: &Clip| -> f64 {
         let Some(a) = c.asset_id.and_then(|id| analyses.get(&id)) else { return 0.5 };
         let (lo, hi) = range(c);
-        let v: Vec<f64> = a.samples.iter().filter(|s| c.kind == ClipKind::Image || (s.time >= lo && s.time <= hi)).map(|s| score(s)).collect();
+        let v: Vec<f64> = a.samples.iter().filter(|s| c.kind == ClipKind::Image || (s.time >= lo && s.time <= hi)).map(&*score).collect();
         if v.is_empty() { 0.5 } else { v.iter().sum::<f64>() / v.len() as f64 }
     };
     let best = |c: &Clip, length: f64| -> (f64, f64) {
@@ -108,7 +108,7 @@ pub fn plan(p: &Project, analyses: &HashMap<Id, ClipAnalysis>, music: Option<&Mu
         let (mut bs, mut bv) = (c.source_start, f64::NEG_INFINITY);
         let mut s = lo;
         while s + span <= hi + 1e-6 {
-            let inside: Vec<f64> = a.samples.iter().filter(|x| x.time >= s && x.time <= s + span).map(|x| score(x)).collect();
+            let inside: Vec<f64> = a.samples.iter().filter(|x| x.time >= s && x.time <= s + span).map(&*score).collect();
             if !inside.is_empty() {
                 let v = inside.iter().sum::<f64>() / inside.len() as f64 * 0.75 + inside.iter().cloned().fold(f64::INFINITY, f64::min) * 0.25;
                 if v > bv {
@@ -372,7 +372,7 @@ pub fn plan(p: &Project, analyses: &HashMap<Id, ClipAnalysis>, music: Option<&Mu
                 let mut bv = f64::NEG_INFINITY;
                 let mut s0 = 0.0;
                 while s0 + span <= asset.duration + 1e-6 {
-                    let inside: Vec<f64> = a.samples.iter().filter(|x| x.time >= s0 && x.time <= s0 + span).map(|x| score(x)).collect();
+                    let inside: Vec<f64> = a.samples.iter().filter(|x| x.time >= s0 && x.time <= s0 + span).map(&*score).collect();
                     if !inside.is_empty() {
                         let v = inside.iter().sum::<f64>() / inside.len() as f64 * 0.75 + inside.iter().cloned().fold(f64::INFINITY, f64::min) * 0.25 - (s0 - c.source_start).abs() * 0.01;
                         if v > bv {

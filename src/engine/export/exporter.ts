@@ -156,7 +156,7 @@ export class Exporter {
       this.check();
 
       // 2. The picture.
-      const fd = frameDuration(project.fps);
+      const fd = frameDuration(o.fps > 0 ? o.fps : project.fps);
       if (!audioOnly) {
         await this.renderVideo(project, media, o, lo, duration, fd, (f) => report(0.1 + f * 0.85, "rendering"));
       }

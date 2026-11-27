@@ -31,6 +31,8 @@ async fn main() {
     let app = Router::new()
         .route("/invoke/{cmd}", post(invoke))
         .route("/file", get(file))
+        // Export streams encoded video through here; axum's default 2 MB limit is too small.
+        .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(CorsLayer::very_permissive())
         .with_state(dev);
     let port = std::env::var("PROMPTEDIT_DEV_PORT").unwrap_or_else(|_| "1430".into());

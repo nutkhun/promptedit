@@ -35,6 +35,13 @@ class Lane {
   private epoch = 0;
   private listeners = new Set<() => void>();
   private failed = false;
+  /** Presentation index of the last frame output since the last restart (output is in order). */
+  private lastOut = -1;
+  /**
+   * How many samples the decoder holds beyond what reordering needs before it outputs a frame
+   * (frame-threaded software decoders hold several). Learned, so requests feed that far at once.
+   */
+  private lag = 0;
   readonly frames = new Map<number, VideoFrame>();
   lastUse = 0;
 
@@ -47,7 +54,8 @@ class Lane {
     const t = this.src.track;
     const d = t.byPts[p];
     const key = this.src.keyAtOrBefore(d);
-    return key <= this.nextFeed && this.nextFeed <= d + t.reorder + 1;
+    // Not decoded yet (or still inside the decoder), and no keyframe between here and there.
+    return key <= this.nextFeed && this.lastOut < p;
   }
 
   /** Starts working toward frame `p`. In exact mode resolves when it's decoded (or can't be). */
@@ -128,6 +136,7 @@ class Lane {
       this.decoder = this.makeDecoder();
     }
     this.failed = false;
+    this.lastOut = -1;
     this.nextFeed = fromDecodeIndex;
     this.needKey = false;
   }
@@ -137,9 +146,23 @@ class Lane {
     return p >= t - KEEP_BEHIND && p <= t + (this.mode === "exact" ? KEEP_BEHIND + 1 : PLAY_AHEAD);
   }
 
+  /** The newest decoded frame at or before the target: what playback shows while decoding catches up. */
+  private held(): number {
+    let h = -1;
+    for (const k of this.frames.keys()) if (k <= this.target && k > h) h = k;
+    return h;
+  }
+
   private onFrame(frame: VideoFrame) {
     const p = this.src.presIndexOf(frame.timestamp);
-    if (p === undefined || !this.keep(p)) {
+    if (p !== undefined) {
+      this.lastOut = Math.max(this.lastOut, p);
+      const t = this.src.track;
+      this.lag = Math.min(16, Math.max(this.lag, this.nextFeed - 1 - t.byPts[p] - t.reorder));
+    }
+    // Behind the target while playing, a newer frame still beats the one on screen.
+    const catchingUp = p !== undefined && this.mode !== "exact" && p <= this.target && p > this.held();
+    if (p === undefined || (!this.keep(p) && !catchingUp)) {
       frame.close();
     } else {
       this.frames.get(p)?.close();
@@ -150,11 +173,13 @@ class Lane {
   }
 
   private evict() {
+    // The frame on screen stays until a newer one replaces it (never a blank picture while playing).
+    const hold = this.mode === "exact" ? -1 : this.held();
     for (const [k, f] of this.frames) {
-      if (!this.keep(k)) { f.close(); this.frames.delete(k); }
+      if (k !== hold && !this.keep(k)) { f.close(); this.frames.delete(k); }
     }
     if (this.frames.size <= MAX_FRAMES) return;
-    const far = [...this.frames.keys()].sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
+    const far = [...this.frames.keys()].filter((k) => k !== hold).sort((a, b) => Math.abs(b - this.target) - Math.abs(a - this.target));
     for (const k of far.slice(0, this.frames.size - MAX_FRAMES)) { this.frames.get(k)!.close(); this.frames.delete(k); }
   }
 
@@ -175,7 +200,7 @@ class Lane {
         // Decode index that frames p…last need, plus room for reordering decoders.
         let need = 0;
         for (let q = p; q <= last; q++) need = Math.max(need, t.byPts[q]);
-        const limit = Math.min(n - 1, need + t.reorder + (ahead ? 2 : 0));
+        const limit = Math.min(n - 1, need + t.reorder + this.lag + (ahead ? 2 : 0));
         if (this.nextFeed <= limit) {
           if (decoder.decodeQueueSize >= 4) { await this.event(); continue; }
           const i = this.nextFeed++;

@@ -16,7 +16,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A model the Magic popover offers.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -267,15 +267,10 @@ pub fn start(host: Arc<dyn Host>, kind: Kind, request: String, pointers: super::
             Err(e) => e,
         };
         m.finish(note);
-        if note_wants_attention() {
-            host.request_attention();
-        }
+        // Finished while the person was in another app: the Dock icon bounces (the taskbar flashes).
+        host.request_attention();
     });
     Ok(())
-}
-
-fn note_wants_attention() -> bool {
-    true
 }
 
 type RunResult = Result<(String, bool), Note>;
@@ -309,7 +304,6 @@ fn run(host: &dyn Host, kind: Kind, cli: &Path, request: &str, pointers: &super:
     let folder = magic_folder();
     let url = format!("{endpoint}?draft={token}");
     let brief = super::brief::brief(request, &base, Some(pointers));
-    let started = Instant::now();
     let mut child = match command(cli).args(args(kind, &url, model, effort, &folder)).current_dir(&folder).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -353,7 +347,6 @@ fn run(host: &dyn Host, kind: Kind, cli: &Path, request: &str, pointers: &super:
         // Stopped: nothing changes.
         return Ok((String::new(), false));
     }
-    let _ = started;
     let Some(d) = d else { return Ok((format!("{name} didn't change anything."), false)) };
     let d = d.lock().unwrap();
     let said = reading.last_message.trim().to_string();

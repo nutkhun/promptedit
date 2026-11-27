@@ -1,0 +1,158 @@
+/* Magic: the button, its popover and note, the editor lock and agents' cursors (Editroom's
+   MagicPopover.swift: 380 wide, padding 14, panel background; tabs in the select/cut switch style). */
+
+.mg-anchor { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+.mg-button { min-width: 74px; justify-content: center; }
+.mg-button.working:hover { background: rgba(var(--ink-rgb), 0.14); }
+.mg-stop { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); }
+.mg-status {
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; color: var(--text); opacity: 0.6;
+}
+
+.mg-floating {
+  position: fixed; z-index: 900;
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(var(--ink-rgb), 0.1), 0 18px 48px rgba(0, 0, 0, 0.45);
+  animation: mg-in 120ms ease-out;
+}
+@keyframes mg-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.mg-popover { width: 380px; padding: 14px; }
+.mg-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--bg); }
+.mg-tab {
+  flex: 1; height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: 6px; color: var(--text-dim); font-size: 11.5px; font-weight: 600;
+  transition: background var(--ease), color var(--ease);
+}
+.mg-tab:hover { color: var(--text); }
+.mg-tab.on { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.1); }
+.mg-content { padding-top: 12px; }
+.mg-loading { display: flex; justify-content: center; padding: 30px 0; }
+
+.mg-logo {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  color: #FFFFFF; font-weight: 700; line-height: 1;
+}
+.mg-logo.claude { background: #D97857; }
+.mg-logo.chatgpt { background: #0FA380; }
+.mg-logo.local { color: var(--text); }
+
+.mg-centered {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 6px 10px;
+}
+.mg-centered > .mg-logo { margin-bottom: 9px; }
+.mg-centered .title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.mg-centered .text { font-size: 11.5px; line-height: 1.4; color: var(--text-dim); margin-bottom: 12px; }
+.mg-connect { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.mg-faint { font-size: 10.5px; color: var(--text-faint); }
+.mg-error { font-size: 11px; color: #E5735C; padding-top: 6px; }
+.mg-row { display: flex; gap: 8px; align-items: center; }
+.mg-row.end { justify-content: flex-end; }
+
+.mg-form-head { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+.mg-heading { font-size: 13px; font-weight: 600; color: var(--text); }
+.mg-form-foot { display: flex; align-items: center; gap: 5px; margin-top: 11px; }
+.mg-model { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mg-plan { font-size: 10.5px; color: var(--text-faint); padding-left: 4px; }
+.mg-local-model { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: 11px; font-weight: 500; padding-left: 2px; }
+.mg-local-note { margin-top: 8px; font-size: 11px; line-height: 1.4; color: var(--text-faint); }
+
+/* The prompt box: a transparent textarea over a layer that draws mentions strong. */
+.mg-prompt {
+  position: relative; border-radius: 8px;
+  background: var(--field); box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.mg-prompt-layer, .mg-prompt-input {
+  position: absolute; inset: 0; margin: 0; padding: 9px 10px;
+  font: 12.5px/1.4 var(--font); letter-spacing: 0;
+  white-space: pre-wrap; overflow-wrap: break-word; overflow-y: auto;
+  border: 0; border-radius: 8px;
+}
+.mg-prompt-layer { color: var(--text); pointer-events: none; overflow: hidden; }
+.mg-prompt-layer .mg-placeholder { color: var(--text-faint); }
+/* Faux bold, so the strong runs keep the textarea's widths. */
+.mg-prompt-layer .strong { color: var(--text); -webkit-text-stroke: 0.45px currentColor; text-shadow: 0 0 0.01px currentColor; }
+.mg-prompt-input { background: transparent; color: transparent; caret-color: var(--text); resize: none; }
+.mg-prompt-input::selection { background: rgba(var(--ink-rgb), 0.2); color: transparent; }
+
+.mg-mentions {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 2;
+  max-height: calc(8.5 * 24px + 6px); overflow-y: auto; padding: 3px;
+  border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--stroke), 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.mg-mention { height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border-radius: 5px; color: var(--text); }
+.mg-mention.hot { background: rgba(var(--ink-rgb), 0.1); }
+.mg-mention.disabled { color: var(--text-faint); }
+.mg-mention .name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mg-mention .detail { margin-left: auto; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.mg-mention .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+/* Ideas, History and the model chips. */
+.mg-menu-host { position: relative; }
+.mg-menu-icon {
+  width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px; color: var(--text-dim); transition: background var(--ease), color var(--ease);
+}
+.mg-menu-icon:hover, .mg-menu-icon.on { background: rgba(var(--ink-rgb), 0.08); color: var(--text); }
+.mg-menu {
+  position: absolute; top: calc(100% + 4px); z-index: 3; padding: 4px;
+  border-radius: 8px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--stroke), 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.mg-menu.right { right: 0; }
+.mg-menu.left { left: 0; top: auto; bottom: calc(100% + 4px); }
+.mg-menu-header { padding: 4px 8px 3px; font-size: 10.5px; font-weight: 600; color: var(--text-faint); }
+.mg-menu-sep { height: 1px; margin: 4px 6px; background: var(--stroke); }
+.mg-menu-item {
+  width: 100%; min-height: 24px; display: flex; align-items: center; gap: 7px; padding: 3px 8px;
+  border-radius: 5px; text-align: left; font-size: 12px; color: var(--text);
+}
+.mg-menu-item:hover:not(.disabled) { background: rgba(var(--ink-rgb), 0.1); }
+.mg-menu-item.disabled { color: var(--text-faint); }
+.mg-menu-item .check { width: 10px; display: inline-flex; }
+.mg-menu-item .blurb { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+.mg-history { max-height: calc(8 * 40px); overflow-y: auto; }
+.mg-menu-item.history { align-items: flex-start; }
+.mg-menu-item.history .text {
+  flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35;
+}
+.mg-menu-item.history .badge { flex: none; font-size: 10px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: rgba(var(--ink-rgb), 0.07); }
+.mg-chips { display: flex; gap: 5px; }
+.mg-chip {
+  height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px;
+  border-radius: 999px; background: rgba(var(--ink-rgb), 0.08); color: var(--text);
+  font-size: 11px; font-weight: 500; transition: background var(--ease);
+}
+.mg-chip:hover, .mg-chip.on { background: rgba(var(--ink-rgb), 0.14); }
+.mg-chip svg:last-child { opacity: 0.7; }
+
+/* The note when Magic is done (340 wide). */
+.mg-note { width: 340px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.mg-note-head { display: flex; align-items: center; gap: 8px; }
+.mg-note-head .who { font-size: 12px; font-weight: 600; color: var(--text); }
+.mg-note-head .detail { font-size: 11px; color: var(--text-faint); margin-left: auto; }
+.mg-note-text { font-size: 12.5px; line-height: 1.45; color: var(--text); user-select: text; -webkit-user-select: text; }
+.mg-note-text a { color: var(--text); text-decoration: underline; text-decoration-color: rgba(var(--ink-rgb), 0.4); }
+
+/* The editor, locked while Magic works (the title bar and Magic button stay live). */
+.mg-lock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 800; cursor: progress; background: rgba(0, 0, 0, 0.12); }
+
+/* Agents' cursors. */
+.mg-cursors { position: fixed; inset: 0; pointer-events: none; z-index: 950; }
+.mg-cursor { position: absolute; left: 0; top: 0; will-change: transform; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5)); }
+.mg-cursor svg { display: block; }
+.mg-cursor .tag {
+  position: absolute; left: 14px; top: 20px; height: 16px; padding: 0 6px; border-radius: 4px;
+  font: 600 10px/16px var(--font); color: #FFFFFF; white-space: nowrap;
+}
+
+/* Settings › Magic. */
+.mg-app-row { align-items: center; }
+.mg-app-row .mg-app-title { font-weight: 600; }
+.mg-footnote { font-size: 11px; color: var(--text-faint); line-height: 1.4; padding: 6px 4px 0; }
+.mg-problem { font-size: 11px; color: #E5735C; }
+.mg-working { gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-dim); }
+.mg-client { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.mg-client .dot { width: 7px; height: 7px; border-radius: 50%; }

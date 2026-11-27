@@ -214,7 +214,8 @@ pub fn decide(clips: &[(MediaAsset, ClipAnalysis)], music: Option<(&MediaAsset, 
             return None;
         }
         let wanted_times = recipe.moments.get(&s.asset.id).cloned().unwrap_or_default();
-        let (mut best, mut best_wanted): (Option<(f64, f64)>, Option<(f64, f64)>) = (None, None);
+        let mut best: Option<(f64, f64)> = None;
+        let mut best_wanted: Option<(f64, f64)> = None;
         let mut start = 0.05;
         while start + length <= limit - 0.05 {
             let end = start + length;

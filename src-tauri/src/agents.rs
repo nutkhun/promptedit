@@ -163,7 +163,7 @@ impl Agents {
             if exe.exists() {
                 return Some(exe);
             }
-            return self.claude_support().into_iter().skip(1).next().filter(|p| p.exists());
+            return self.claude_support().into_iter().nth(1).filter(|p| p.exists());
         }
         None
     }

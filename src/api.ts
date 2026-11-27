@@ -16,7 +16,14 @@ async function invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promi
     headers: { "content-type": "application/json" },
     body: JSON.stringify(args),
   });
-  const body = await r.json();
+  const text = await r.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON: an error from the HTTP layer itself (e.g. a body-size limit).
+    throw text || `${r.status} ${r.statusText}`;
+  }
   if (!r.ok) throw body;
   return body as T;
 }

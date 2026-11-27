@@ -131,7 +131,7 @@ fn mcp_server_end_to_end() {
     assert_eq!(sid.len(), 36);
     assert_eq!(sid, sid.to_uppercase(), "uppercase like Swift's UUID");
     assert_eq!(mcp::mcp().recent_clients().first().map(|c| c.name.clone()), Some("Claude".into()));
-    let old = a.rpc("initialize", json!({"protocolVersion": "1999-01-01"}));
+    let old = Agent::new("/mcp").rpc("initialize", json!({"protocolVersion": "1999-01-01"}));
     assert_eq!(old["result"]["protocolVersion"], "2025-06-18", "unknown versions get the newest");
     assert_eq!(a.rpc("ping", json!({}))["result"], json!({}));
     assert_eq!(a.rpc("prompts/list", json!({}))["result"], json!({"prompts": []}));
@@ -225,7 +225,9 @@ fn mcp_server_end_to_end() {
     assert!(frame[1]["text"].as_str().unwrap().starts_with("Frame at 5s."));
     let analysis = a.json("analyze_media", json!({"asset_id": asset_id}));
     assert_eq!(analysis["duration"], 10);
-    assert_eq!(analysis["best_moments"].as_array().unwrap().len(), 5);
+    let moments = analysis["best_moments"].as_array().unwrap();
+    assert!((3..=5).contains(&moments.len()), "up to five, not overlapping: {moments:?}");
+    assert!(moments[0]["score"].as_f64().unwrap() >= moments[1]["score"].as_f64().unwrap(), "best first");
 
     // Each live call was one undo step: undo the in/out, title, marker, grade and speed, and the
     // split and add, and the timeline is empty again.

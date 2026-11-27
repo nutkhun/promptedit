@@ -152,7 +152,7 @@ pub fn cut_frame(p: &Project, t: f64) -> Option<(Vec<u8>, Option<String>)> {
         if track.hidden {
             continue;
         }
-        let Some(c) = p.clips.iter().filter(|c| c.track_id == track.id && c.start <= t + 1e-6 && t < c.end() - 1e-6).last() else { continue };
+        let Some(c) = p.clips.iter().rfind(|c| c.track_id == track.id && c.start <= t + 1e-6 && t < c.end() - 1e-6) else { continue };
         if c.grade.as_ref().is_some_and(|g| !g.is_neutral()) && !missing.contains(&"colour") {
             missing.push("colour");
         }
