@@ -7,6 +7,7 @@ pub mod media;
 pub mod menu;
 pub mod shell;
 pub mod render;
+pub mod transcribe;
 
 use promptedit_core::edit::{Edit, Outcome};
 use promptedit_core::history::Document;
@@ -81,8 +82,12 @@ pub fn open_project_at(state: &AppState, path: PathBuf) -> Result<Snapshot, Stri
     if let Some(dir) = path.parent() {
         doc.project.resolve_moved_media(dir);
     }
+    // What's said in its files, in the background, if the speech model is here (as Editroom does
+    // for every file it opens).
+    let assets = doc.project.assets.clone();
     *state.doc.lock().unwrap() = Document::new(doc.project);
     *state.file.lock().unwrap() = Some(path);
+    transcribe::auto_queue(&assets);
     Ok(snapshot(state, None))
 }
 
@@ -195,6 +200,7 @@ pub fn import_paths(state: &AppState, cache_dir: &Path, paths: Vec<String>) -> I
     }
     let mut added = vec![];
     let mut probes = vec![];
+    let mut new_assets = vec![];
     {
         let mut doc = state.doc.lock().unwrap();
         for (asset, probe) in ok {
@@ -205,12 +211,15 @@ pub fn import_paths(state: &AppState, cache_dir: &Path, paths: Vec<String>) -> I
             }
             added.push(asset.id);
             probes.push((asset.id, probe));
+            new_assets.push(asset.clone());
             doc.project.assets.push(asset);
         }
         if !added.is_empty() {
             doc.dirty = true;
         }
     }
+    // Heard in the background if the speech model is already here, so search finds what's said.
+    transcribe::auto_queue(&new_assets);
     ImportResult { snapshot: snapshot(state, None), added, probes, failed }
 }
 
@@ -255,6 +264,8 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
     use serde_json::{from_value, to_value, Value};
     let arg = |k: &str| args.get(k).cloned().unwrap_or(Value::Null);
     let ok = |v: Snapshot| to_value(v).map_err(|e| e.to_string());
+    // Transcription runs from the first command, so imports are heard in the background too.
+    transcribe::ensure(cache_dir);
     match cmd {
         "get_project" => ok(snapshot(state, None)),
         "new_project" => {
@@ -310,6 +321,7 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
         other => render::dispatch(cache_dir, other, &args)
             .or_else(|| shell::dispatch(state, cache_dir, other, &args))
             .or_else(|| mcp::commands::dispatch(state, cache_dir, other, &args))
+            .or_else(|| transcribe::dispatch(state, cache_dir, other, &args))
             .unwrap_or_else(|| Err(format!("Unknown command {other}"))),
     }
 }
@@ -321,6 +333,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .setup(|app| {
+            // Speech to text (src/transcribe): the queue's thread, and the MCP transcript provider
+            // (registered first, so the MCP server's first tools can hear files).
+            if let Err(e) = transcribe::start_app(app.handle()) {
+                eprintln!("Transcription didn't start: {e}");
+            }
             // The MCP server for AI apps and Magic (src/mcp), then the shell.
             mcp::commands::start_app(app.handle().clone());
             shell::setup(app)
@@ -373,6 +390,13 @@ pub fn run() {
             magic::commands::magic_availability,
             magic::commands::magic_local_status,
             magic::commands::magic_sign_in,
+            transcribe::commands::transcript_get,
+            transcribe::commands::transcribe,
+            transcribe::commands::transcript_state,
+            transcribe::commands::transcription_settings_get,
+            transcribe::commands::transcription_settings_set,
+            transcribe::commands::transcription_model_download,
+            transcribe::commands::transcription_model_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while running PromptEdit")

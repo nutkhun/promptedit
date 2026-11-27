@@ -14,6 +14,7 @@ import { frameDuration, reframeCanvas } from "../geometry";
 import type { GradeBaker } from "../grade";
 import { layersAt } from "../layers";
 import { resolveLayers } from "../scene";
+import { captionDrawLayer, prepareCaptions } from "../../captions/picture";
 import { clipSound, clipVariant, renderClip, trackMixes, type ClipSound } from "../audio/mix";
 import { PcmStore, RATE } from "../audio/pcm";
 import type { Waveforms } from "../audio/waveform";
@@ -262,13 +263,16 @@ export class Exporter {
     const n = Math.max(1, Math.ceil(duration / (fd.num / fd.den) - 1e-6));
     const gop = Math.round(fps * 2);
     const frameUs = (fd.num / fd.den) * 1e6;
+    await prepareCaptions(p);
     try {
       for (let k = 0; k < n; k++) {
         this.check();
         if (encodeError) throw encodeError;
         const t = lo + (k * fd.num) / fd.den;
         const r = await resolveLayers(layersAt(p, t), media, this.deps.baker, canvas, "sequential", "export:");
-        comp.render(r.layers, frame);
+        // Captions on top of every video track, in the output frame (after the reframe crop).
+        const caption = captionDrawLayer(p, t, frame);
+        comp.render(caption ? [...r.layers, caption] : r.layers, frame);
         for (const f of r.frames) f.close();
         const yuv = comp.readI420();
         const vf = new VideoFrame(yuv.data, {

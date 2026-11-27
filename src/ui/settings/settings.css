@@ -32,6 +32,8 @@
 .pe-settings-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .pe-settings-page { padding: 14px 22px 22px; display: flex; flex-direction: column; gap: 18px; }
+/* General is taller than the panel once Captions is in: it scrolls. */
+.pe-settings-page.pe-general { flex: 1; min-height: 0; overflow-y: auto; }
 .pe-settings-scroll { overflow-y: auto; flex: 1; min-height: 0; padding: 16px 24px; gap: 22px; }
 .pe-settings-label {
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: var(--text-faint);

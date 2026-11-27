@@ -14,6 +14,7 @@ import { shortcuts } from "../commands";
 import { useStore } from "../store";
 import { PillButton } from "./buttons";
 import { ExportProgressPill } from "./export/ExportProgress";
+import { SpeechModelPill } from "../captions/SpeechModelPill";
 import { Glyph } from "./icons";
 import { MenuBar } from "./shell/MenuBar";
 import "./titlebar.css";
@@ -36,6 +37,7 @@ export function TitleBar() {
         {dirty && <span className="dirty" title="Unsaved changes" />}
       </div>
       <div className="pe-titlebar-actions">
+        <SpeechModelPill />
         <ExportProgressPill />
         {magicEnabled && (MagicButtonImpl ? <MagicButtonImpl /> : <MagicPlaceholder />)}
         <PillButton prominent help={shortcuts.help("export", "Export")} onClick={() => set({ exportOpen: true })} className="pe-export-button">

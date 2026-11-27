@@ -9,11 +9,11 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { inTauri, isMac } from "../../api";
 import { ACTION, accelerator, can, checked, clipActions, displayCombo, enabled, perform, shortcuts, type ActionId, type KeyCombo } from "../../commands";
-import type { Clip } from "../../model";
 import { store } from "../../store";
 import { showAlert } from "../Alerts";
 import { baseName, clearRecents, openProjectPath, useRecents } from "./files";
 import { revealInMedia } from "./reveal";
+import { canCaption, captionsFromMenu, captionsMenuTitle } from "../../captions/actions";
 
 export type MenuNode =
   | { kind: "item"; id: string; text: string; enabled: boolean; checked?: boolean; combo?: KeyCombo; run: () => void }
@@ -32,7 +32,6 @@ const item = (id: string, text: string, run: () => void, on = true, combo?: KeyC
 const act = (a: ActionId, text: string = ACTION[a].title): MenuNode =>
   item(`action.${a}`, text, () => perform(a), enabled(a), shortcuts.menuCombo(a), checked(a));
 
-const selectedClips = (): Clip[] => { const s = store(); return s.project.clips.filter((c) => s.selection.has(c.id)); };
 
 export async function aboutPromptEdit() {
   let version = "development build";
@@ -56,9 +55,6 @@ const settings = () => store().set({ settingsOpen: true });
 export function buildMenus(): TopMenu[] {
   const s = store();
   const recents = useRecents.getState().paths;
-  const sel = selectedClips();
-  const captioned = sel.length > 0 && sel.every((c) => c.captioned);
-  const hasSound = sel.some((c) => c.kind === "audio" || (c.kind === "video" && c.assetID && s.project.assets.find((a) => a.id === c.assetID)?.hasAudio));
 
   const file: MenuNode[] = [
     act("new"), act("open"),
@@ -101,9 +97,7 @@ export function buildMenus(): TopMenu[] {
     item("clip.closeAllGaps", "Close All Gaps", () => void clipActions.closeAllGaps(), s.project.clips.length > 0),
     SEP, act("addText"),
     item("clip.addSolid", "Add Solid", () => void clipActions.addSolid()),
-    item("clip.captions", captioned ? "Remove Captions" : "Add Captions", () =>
-      void s.edit(captioned ? { op: "removeCaptions", ids: sel.map((c) => c.id) } : { op: "addCaptions", ids: sel.map((c) => c.id) }),
-    !!hasSound),
+    item("clip.captions", captionsMenuTitle(), () => void captionsFromMenu(), canCaption()),
     SEP,
     item("clip.addVideoTrack", "Add Video Track", () => void clipActions.addTrack("video")),
     item("clip.addAudioTrack", "Add Audio Track", () => void clipActions.addTrack("audio")),

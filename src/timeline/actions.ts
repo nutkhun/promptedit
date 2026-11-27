@@ -6,6 +6,8 @@ import type { Clip, Id, Project, TrackKind, Transition } from "../model";
 import { store } from "../store";
 import { asset, clipEnd, linked, unlocked } from "../timing";
 import { WAVE_RATE, waveform } from "./media";
+import { useCaptions } from "./captions";
+import * as captions from "../captions/actions";
 
 const sel = () => [...store().selection];
 
@@ -28,6 +30,7 @@ export const splitAtPlayhead = () => store().edit({ op: "splitAtPlayhead", selec
 export function deleteSelected(ripple = false) {
   const s = store();
   if (s.mediaSelection.size) return s.edit({ op: "removeAssets", ids: [...s.mediaSelection] });
+  if (!s.selection.size && useCaptions.getState().selection.size) return captions.deleteSelectedCaptions();
   if (!s.selection.size) return;
   return s.edit({ op: "delete", ids: sel(), ripple });
 }
@@ -39,8 +42,9 @@ export const reverseSelection = () => store().edit({ op: "reverse", selection: s
 export const setSpeed = (speed: number) => store().edit({ op: "setSpeed", ids: sel(), speed, sticky: store().sticky });
 export const setTransition = (id: Id, transition: Transition | null) => store().edit({ op: "setTransition", id, transition });
 export const removeFades = () => store().edit({ op: "update", ids: sel(), patch: { fadeIn: 0, fadeOut: 0 } });
-export const addCaptions = () => store().edit({ op: "addCaptions", ids: sel() });
-export const removeCaptions = (ids: Id[] = sel()) => store().edit({ op: "removeCaptions", ids });
+// Captions: the captions module asks for the speech model and starts listening (src/captions/actions.ts).
+export const addCaptions = () => void captions.addCaptions(sel());
+export const removeCaptions = (ids: Id[] = sel()) => captions.removeCaptions(ids);
 export const matchSequence = (assetID: Id) => store().edit({ op: "matchSequence", asset: assetID });
 
 /** Reveal in Media: pick the clip's file in the Media panel. */

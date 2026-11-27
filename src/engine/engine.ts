@@ -19,6 +19,7 @@ import type { Engine, ExportOptions, ExportProgress } from "./index";
 import { layersAt, type Layer } from "./layers";
 import { resolveLayers } from "./scene";
 import { Thumbnails } from "./thumbs";
+import { captionDrawLayer, onCaptionsChanged } from "../captions/picture";
 
 type Shown = { kind: "timeline"; t: number } | { kind: "source"; asset: Id; time: number };
 
@@ -56,6 +57,8 @@ export class MediaEngine implements Engine {
         if (!this.playing) this.redraw();
       }
     });
+    // A transcript arriving changes the captions on the picture without an edit.
+    onCaptionsChanged(() => this.redraw());
   }
 
   // ---- Viewer ----
@@ -112,7 +115,9 @@ export class MediaEngine implements Engine {
       if (gen < this.drawn || !this.comp) return r.complete;
       this.drawn = gen;
       const frame: Frame = { canvasWidth: size.width, canvasHeight: size.height, outWidth: size.width, outHeight: size.height, offsetX: 0, offsetY: 0 };
-      this.comp.render(r.layers, frame);
+      // Captions go on top of every video track (§9.3).
+      const caption = captionDrawLayer(p, t, frame);
+      this.comp.render(caption ? [...r.layers, caption] : r.layers, frame);
       this.present(p);
     } finally {
       for (const f of r.frames) f.close();

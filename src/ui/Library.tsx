@@ -13,27 +13,13 @@ import { IconButton, Spinner } from "./buttons";
 import { Glyph } from "./icons";
 import { contextMenu, openMenu, SEP, type MenuItem } from "./menu";
 import { AssetRow, AssetTile } from "./library/AssetItem";
+import { matches, parseSearch, saidSnippet, useSaidSearch } from "./library/search";
 import { beginMediaDrag } from "./pointerDrag";
 import { importDialog, showInFolder, showInFolderLabel } from "./shell/files";
 import { removeAssets } from "./shell/media";
 import { showAlert } from "./Alerts";
 import { useReveal } from "./shell/reveal";
 import "./library/library.css";
-
-// ---- Search (§1.3): words in quotes are what's said (transcripts); other words match the name ----
-
-const QUOTED = /["“”]([^"“”]*)["“”]?/g;
-function parseSearch(q: string): { words: string[]; phrases: string[] } {
-  const phrases = [...q.matchAll(QUOTED)].map((m) => m[1].trim()).filter(Boolean);
-  const rest = q.replace(QUOTED, " ").trim().toLowerCase();
-  return { words: rest ? rest.split(/\s+/) : [], phrases };
-}
-function matches(a: MediaAsset, words: string[], phrases: string[]): boolean {
-  const name = a.name.toLowerCase();
-  if (!words.every((w) => name.includes(w))) return false;
-  // What's said needs a transcript; none are made yet, so a quoted search finds nothing.
-  return phrases.length === 0;
-}
 
 /** Media files that can't be found (checked when the list changes and when the window comes back). */
 function useOffline(assets: MediaAsset[]): Set<Id> {
@@ -78,11 +64,14 @@ export function Library() {
     return () => ro.disconnect();
   }, []);
 
-  const { words, phrases } = parseSearch(search);
+  // Search (§1.3): words in quotes are what's said (transcripts); other words match the name.
+  const query = useMemo(() => parseSearch(search), [search]);
+  const phrases = query.phrases;
   const searching = search.trim().length > 0;
-  const shown = useMemo(() => (searching ? assets.filter((a) => matches(a, words, phrases)) : assets),
+  const heard = useSaidSearch(assets, query);
+  const shown = useMemo(() => (searching ? assets.filter((a) => matches(a, query)) : assets),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assets, search]);
+    [assets, query, heard]);
 
   // A hand import (or Reveal in Media): scrolled into view once drawn.
   const reveal = useReveal((s) => s.nonce);
@@ -172,14 +161,14 @@ export function Library() {
             {layout === "thumbnails" ? (
               <div className="pe-grid">
                 {shown.map((a) => (
-                  <AssetTile key={a.id} asset={a} picked={picked.has(a.id)} offline={offline.has(a.id)} dragIds={dragIds(a.id)}
+                  <AssetTile key={a.id} asset={a} said={saidSnippet(a, query)} picked={picked.has(a.id)} offline={offline.has(a.id)} dragIds={dragIds(a.id)}
                     onPick={(e) => pick(a.id, e)} onOpen={() => void addAtPlayhead([a.id])} onMenu={assetMenu(a)} />
                 ))}
               </div>
             ) : (
               <div className="pe-list">
                 {shown.map((a) => (
-                  <AssetRow key={a.id} asset={a} picked={picked.has(a.id)} offline={offline.has(a.id)} dragIds={dragIds(a.id)} thumbWidth={thumbWidth}
+                  <AssetRow key={a.id} asset={a} said={saidSnippet(a, query)} picked={picked.has(a.id)} offline={offline.has(a.id)} dragIds={dragIds(a.id)} thumbWidth={thumbWidth}
                     onPick={(e) => pick(a.id, e)} onOpen={() => void addAtPlayhead([a.id])} onMenu={assetMenu(a)} />
                 ))}
               </div>

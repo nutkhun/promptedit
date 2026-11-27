@@ -8,6 +8,8 @@ import type { MediaAsset } from "../../model";
 import { shortTime } from "../../timing";
 import { MediaThumb } from "./MediaThumb";
 import { MiddleText } from "./MiddleText";
+import type { Snippet } from "../../captions/said";
+import "../../captions/captions.css";
 
 /** Drag payload type: a JSON array of asset ids, in the Media panel's order. */
 export const MEDIA_DRAG_TYPE = "application/x-promptedit-media";
@@ -23,6 +25,17 @@ export interface ItemProps {
   onPick: (e: MouseEvent) => void;
   onOpen: () => void;
   onMenu: (e: MouseEvent) => void;
+  /** While searching what's said: the words around where it's said. */
+  said?: Snippet;
+}
+
+/** What a clip says around the words searched for, those words in bold (Editroom `SaidLine`). */
+function SaidLine({ said }: { said: Snippet }) {
+  return (
+    <div className="pe-said">
+      “{said.before ? `${said.before} ` : ""}<b>{said.match}</b>{said.after ? ` ${said.after}` : ""}”
+    </div>
+  );
 }
 
 function startDrag(e: React.PointerEvent, ids: () => string[]) {
@@ -67,6 +80,7 @@ export function AssetTile(p: ItemProps) {
         {asset.kind !== "image" && <span className="pe-duration mono">{shortTime(asset.duration)}</span>}
       </div>
       <MiddleText className="pe-tile-name" text={asset.name} />
+      {p.said && <SaidLine said={p.said} />}
     </div>
   );
 }
@@ -89,6 +103,7 @@ export function AssetRow(p: ItemProps & { thumbWidth: number }) {
       <div className="pe-row-text">
         <MiddleText className="pe-row-name" text={asset.name} />
         <div className="pe-row-detail mono">{detail(asset)}</div>
+        {p.said && <SaidLine said={p.said} />}
       </div>
     </div>
   );

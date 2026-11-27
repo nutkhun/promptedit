@@ -30,7 +30,8 @@ pub fn tool(name: &str) -> PathBuf {
     PathBuf::from(exe_name)
 }
 
-fn command(name: &str) -> Command {
+/// A sidecar tool as a `Command`, without a console window on Windows.
+pub(crate) fn command(name: &str) -> Command {
     #[allow(unused_mut)]
     let mut c = Command::new(tool(name));
     #[cfg(windows)]
@@ -255,6 +256,12 @@ pub fn container_is_native(p: &Probe) -> bool {
 
 /// A stable name for a converted copy: same file, same name on every launch (FNV-1a, as Editroom).
 fn copy_name(src: &Path) -> String {
+    format!("{}.mov", cache_stem(src))
+}
+
+/// `<file stem>-<base36 FNV-1a of path|size|mtime>`: the name every cache made from a file uses
+/// (converted copies, transcripts), so a changed file gets new ones (spec 02-engine §15.4).
+pub fn cache_stem(src: &Path) -> String {
     let meta = std::fs::metadata(src).ok();
     let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
     let modified = meta
@@ -268,7 +275,7 @@ fn copy_name(src: &Path) -> String {
         hash = (hash ^ b as u64).wrapping_mul(0x100000001b3);
     }
     let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "media".into());
-    format!("{stem}-{}.mov", radix36(hash))
+    format!("{stem}-{}", radix36(hash))
 }
 
 fn radix36(mut n: u64) -> String {
