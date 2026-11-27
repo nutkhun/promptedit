@@ -1,6 +1,7 @@
 //! PromptEdit's core: the project model (compatible with Editroom's files), edit operations,
 //! undo and timecode. No UI and no media I/O, so it is tested on any OS.
 
+pub mod edit;
 pub mod history;
 pub mod id;
 pub mod model;

@@ -1,51 +1,91 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+// The editor window: title bar, library | viewer | inspector, then the timeline
+// (docs/spec/04-ui.md §1.2).
+
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { api } from "./api";
+import type { Snapshot } from "./model";
+import { useStore } from "./store";
+import { TitleBar } from "./ui/TitleBar";
+import { Library } from "./ui/Library";
+import { Viewer } from "./ui/Viewer";
+import { Inspector } from "./ui/Inspector";
+import { ExportSheet } from "./ui/ExportSheet";
+import { SettingsWindow } from "./ui/SettingsWindow";
+import { Timeline } from "./timeline/Timeline";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  const theme = useStore((s) => s.theme);
+  const exportOpen = useStore((s) => s.exportOpen);
+  const settingsOpen = useStore((s) => s.settingsOpen);
+  const [libraryWidth, setLibraryWidth] = useState(252);
+  const [timelineHeight, setTimelineHeight] = useState(360);
+  const [windowHeight, setWindowHeight] = useState(window.innerHeight);
+  const root = useRef<HTMLDivElement>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    api.getProject().then(useStore.getState().apply).catch(() => {});
+    // Edits made elsewhere (MCP tools, Magic) arrive as events.
+    const un = listen<Snapshot>("project-changed", (e) => useStore.getState().apply(e.payload));
+    const onResize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => {
+      un.then((f) => f());
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
+  const shownTimeline = Math.min(timelineHeight, Math.max(170, windowHeight - 240));
+
+  const dragLibrary = (e: React.PointerEvent) => {
+    const move = (ev: PointerEvent) => setLibraryWidth(Math.min(440, Math.max(190, ev.clientX)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    e.preventDefault();
+  };
+  const dragTimeline = (e: React.PointerEvent) => {
+    const move = (ev: PointerEvent) =>
+      setTimelineHeight(Math.min(Math.max(200, window.innerHeight - 240), Math.max(170, window.innerHeight - ev.clientY)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    e.preventDefault();
+  };
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="app" ref={root}>
+      <TitleBar />
+      <div className="upper">
+        <div className="library-pane" style={{ width: libraryWidth }}>
+          <Library />
+        </div>
+        <div className="splitter-v" onPointerDown={dragLibrary} />
+        <div className="viewer-pane">
+          <Viewer />
+        </div>
+        <div className="hairline-v" />
+        <div className="inspector-pane">
+          <Inspector />
+        </div>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <div className="splitter-h" onPointerDown={dragTimeline} />
+      <div className="timeline-pane" style={{ height: shownTimeline }}>
+        <Timeline />
+      </div>
+      {exportOpen && <ExportSheet />}
+      {settingsOpen && <SettingsWindow />}
+    </div>
   );
 }
-
-export default App;

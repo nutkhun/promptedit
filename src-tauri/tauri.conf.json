@@ -52,12 +52,12 @@
     "fileAssociations": [
       {
         "ext": [
-          "promptedit",
-          "editroom"
+          "room",
+          "cutplay"
         ],
-        "name": "PromptEdit Project",
+        "name": "Editroom Project",
         "role": "Editor",
-        "mimeType": "application/x-promptedit"
+        "mimeType": "application/json"
       }
     ]
   }
