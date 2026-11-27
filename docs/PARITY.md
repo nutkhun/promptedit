@@ -89,10 +89,16 @@ window on macOS/Windows.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| MCP server for Claude/ChatGPT/Claude Code | (in progress) | |
-| One-click connect in Settings | (in progress) | |
-| Magic with Claude / ChatGPT | (in progress) | |
-| Magic Local | (in progress) | Needs a local model on Windows (no Apple Intelligence) |
+| MCP server (43 tools, same names and schemas as Editroom) | ✅ | Port 47921, server name `promptedit`, so it can run beside Editroom; each tool call is one undo step |
+| Agent cursors on the timeline | ✅ | |
+| One-click connect: Claude desktop (.mcpb), Codex, Claude Code | ✅ / 🟡 | macOS paths as Editroom; Windows paths written but not yet tried on a Windows PC |
+| Magic with Claude / ChatGPT (your own plan, headless CLI) | ✅ | Tested end to end with a stand-in CLI |
+| Magic Local: beat cuts, titles, zooms, ramps, improve | ✅ | Editroom's planners ported |
+| Magic Local: understanding typed requests | 🟡 | Uses a local model through Ollama if it's running, else a keyword reader (Editroom uses Apple's on-device model) |
+| Export started by an agent | ✅ | Runs through the export queue and reports progress back |
+| `get_frame` / contact sheets for agents | 🟡 | Drawn from source frames by FFmpeg: no grades, titles or transitions |
+| Transcripts and scene tags for agents | ⬜ | Same gap as search |
+| "Magic at work" animation | ⬜ | Results apply at once |
 
 ## App
 

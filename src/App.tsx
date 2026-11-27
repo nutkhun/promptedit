@@ -14,6 +14,7 @@ import { ExportSheet } from "./ui/ExportSheet";
 import { SettingsWindow } from "./ui/SettingsWindow";
 import { Timeline } from "./timeline/Timeline";
 import { Shell } from "./ui/shell/Shell";
+import { startAgentExports } from "./ui/export/agentExports";
 import "./App.css";
 
 export default function App() {
@@ -25,6 +26,9 @@ export default function App() {
   const [timelineHeight, setTimelineHeight] = useState(360);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
   const root = useRef<HTMLDivElement>(null);
+
+  // Exports Claude/ChatGPT start over MCP run through the export queue.
+  useEffect(() => startAgentExports(), []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

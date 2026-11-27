@@ -17,6 +17,8 @@ export interface ExportJob {
   progress: number;
   message?: string;
   startedAt?: number;
+  /** Told about every change, for exports an AI agent started (reported back over MCP). */
+  report?: (job: ExportJob) => void;
 }
 
 interface QueueState {
@@ -28,11 +30,14 @@ interface QueueState {
 export const useExports = create<QueueState>(() => ({ jobs: [] }));
 
 let nextId = 1;
-const patch = (id: number, p: Partial<ExportJob>) =>
+const patch = (id: number, p: Partial<ExportJob>) => {
   useExports.setState((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...p } : j)) }));
+  const job = useExports.getState().jobs.find((j) => j.id === id);
+  job?.report?.(job);
+};
 
-export function queueExport(name: string, kind: string, options: ExportOptions) {
-  useExports.setState((s) => ({ jobs: [...s.jobs, { id: nextId++, name, kind, options, status: "waiting", progress: 0 }] }));
+export function queueExport(name: string, kind: string, options: ExportOptions, report?: ExportJob["report"]) {
+  useExports.setState((s) => ({ jobs: [...s.jobs, { id: nextId++, name, kind, options, status: "waiting", progress: 0, report }] }));
   void runNext();
 }
 
