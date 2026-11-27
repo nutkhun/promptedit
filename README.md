@@ -17,8 +17,14 @@ Installers are built by GitHub Actions for every push to `main`
 - **macOS** (Apple silicon, macOS 14+): `PromptEdit_<version>_aarch64.dmg`
 - **Windows** (10/11, x64): `PromptEdit_<version>_x64-setup.exe` or `.msi`
 
-Unsigned builds show a warning on first open (macOS: right-click › Open; Windows: More info › Run
-anyway). See [Signing](#signing) to sign them.
+Builds without a Developer ID show a warning on first open:
+
+- **macOS:** drag PromptEdit to Applications, open it once, then System Settings › Privacy & Security
+  › **Open Anyway**. If macOS says the app "is damaged" (older builds), run
+  `xattr -cr /Applications/PromptEdit.app` in Terminal and open it again.
+- **Windows:** "Windows protected your PC" › **More info** › **Run anyway**.
+
+See [Signing](#signing) to sign them properly.
 
 ## Features
 
