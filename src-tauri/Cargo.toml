@@ -40,6 +40,13 @@ reqwest = { version = "0.13", features = ["rustls", "stream", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tauri-plugin-dialog = "2"
 
+# Speech to text on this computer (src/transcribe): whisper.cpp, built from source by whisper-rs-sys.
+whisper-rs = "0.16"
+
+# Metal (GPU) for whisper on Macs; Windows and Linux run it on the CPU.
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
+
 [[bin]]
 name = "promptedit"
 path = "src/main.rs"
