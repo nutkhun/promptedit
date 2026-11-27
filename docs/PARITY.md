@@ -28,7 +28,8 @@ window on macOS/Windows.
 | Rotation metadata | ✅ | |
 | HDR / Apple Log to Rec.709 | ⬜ | Drawn as the browser converts them |
 | Library: thumbnails/list, search by name, hover-scrub, context menus | ✅ † | |
-| Search by what's said (transcripts) and what's in the picture (scene tags) | ⬜ | Needs on-device speech (whisper.cpp) and image tagging (ONNX) |
+| Search by what's said (quoted words, with snippets) | ✅ | On-device transcripts (whisper.cpp) |
+| Search by what's in the picture (scene tags) | ⬜ | Needs on-device image tagging (ONNX) |
 | Offline media, Locate…, Reload from Disk | 🟡 | Relink exists; offline detection only checks the library, not the disk |
 
 ## Editing
@@ -47,7 +48,7 @@ window on macOS/Windows.
 | Track mute/solo/lock/hide, gain, ducking | ✅ | |
 | Editable keyboard shortcuts (⌘ on Mac, Ctrl on Windows) | ✅ | |
 | Drag from Media to timeline; drop files from Finder/Explorer | ✅ † | Pointer-driven so it works in WebView2 |
-| Captions: transcribe, show, style, fix words | 🟡 | Model, edits, inspector and timeline row done; transcription and on-picture captions not built |
+| Captions: transcribe, show, style, fix words, burn into export | ✅ | whisper.cpp on the computer (Metal on Macs), model downloaded once (Fast/Balanced/Best), auto or chosen language. Word timing differs a little from Apple's recogniser, so phrasing can differ |
 
 ## Picture
 
@@ -97,7 +98,8 @@ window on macOS/Windows.
 | Magic Local: understanding typed requests | 🟡 | Uses a local model through Ollama if it's running, else a keyword reader (Editroom uses Apple's on-device model) |
 | Export started by an agent | ✅ | Runs through the export queue and reports progress back |
 | `get_frame` / contact sheets for agents | 🟡 | Drawn from source frames by FFmpeg: no grades, titles or transitions |
-| Transcripts and scene tags for agents | ⬜ | Same gap as search |
+| Transcripts for agents (`get_transcript`, `set_captions`) | ✅ | |
+| Scene tags for agents | ⬜ | Same gap as picture search |
 | "Magic at work" animation | ⬜ | Results apply at once |
 
 ## App
