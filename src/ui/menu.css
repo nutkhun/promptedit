@@ -1,0 +1,25 @@
+.pe-menu {
+  position: fixed; z-index: 1100;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--sheet-field);
+  box-shadow: 0 0 0 1px rgba(var(--ink-rgb), 0.1), 0 10px 30px rgba(0, 0, 0, 0.4);
+  font-size: 12.5px; color: var(--text);
+  max-height: calc(100vh - 8px); overflow-y: auto;
+  animation: pe-menu-in 80ms ease-out;
+}
+@keyframes pe-menu-in { from { opacity: 0; } }
+.pe-menu-item {
+  display: flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 10px 0 8px; border-radius: 5px;
+  white-space: nowrap;
+}
+.pe-menu-item.hot { background: rgba(var(--ink-rgb), 0.12); }
+.pe-menu-item.off { color: var(--text-faint); }
+.pe-menu-item .check { width: 12px; flex: none; display: inline-flex; justify-content: center; }
+.pe-menu-item .text { flex: 1; }
+.pe-menu-item .shortcut { margin-left: 24px; color: var(--text-dim); font-size: 12px; }
+.pe-menu-item.off .shortcut { color: var(--text-faint); }
+.pe-menu-item .chev { margin-left: 16px; color: var(--text-dim); display: inline-flex; }
+.pe-menu-sep { height: 1px; margin: 5px 8px; background: rgba(var(--ink-rgb), 0.1); }
+.pe-menu-header { padding: 4px 10px 2px 26px; font-size: 11px; font-weight: 600; color: var(--text-faint); }

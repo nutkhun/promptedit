@@ -374,7 +374,8 @@ pub fn asset_for(path: &Path, p: &Probe) -> MediaAsset {
         path: path.to_string_lossy().into_owned(),
         relative_path: None,
         playable_path: None,
-        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        // Editroom names an item after its file, without the extension.
+        name: path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
         kind: p.kind,
         duration: p.duration,
         width: p.width,

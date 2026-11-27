@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api } from "./api";
+import { api, inTauri } from "./api";
 import type { Snapshot } from "./model";
 import { useStore } from "./store";
 import { TitleBar } from "./ui/TitleBar";
@@ -13,12 +13,14 @@ import { Inspector } from "./ui/Inspector";
 import { ExportSheet } from "./ui/ExportSheet";
 import { SettingsWindow } from "./ui/SettingsWindow";
 import { Timeline } from "./timeline/Timeline";
+import { Shell } from "./ui/shell/Shell";
 import "./App.css";
 
 export default function App() {
   const theme = useStore((s) => s.theme);
   const exportOpen = useStore((s) => s.exportOpen);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const viewerOnly = useStore((s) => s.viewerOnly);
   const [libraryWidth, setLibraryWidth] = useState(252);
   const [timelineHeight, setTimelineHeight] = useState(360);
   const [windowHeight, setWindowHeight] = useState(window.innerHeight);
@@ -31,7 +33,8 @@ export default function App() {
   useEffect(() => {
     api.getProject().then(useStore.getState().apply).catch(() => {});
     // Edits made elsewhere (MCP tools, Magic) arrive as events.
-    const un = listen<Snapshot>("project-changed", (e) => useStore.getState().apply(e.payload));
+    // (No event bus in a plain browser: there, `listen` would throw.)
+    const un = inTauri ? listen<Snapshot>("project-changed", (e) => useStore.getState().apply(e.payload)) : Promise.resolve(() => {});
     const onResize = () => setWindowHeight(window.innerHeight);
     window.addEventListener("resize", onResize);
     return () => {
@@ -64,6 +67,16 @@ export default function App() {
     e.preventDefault();
   };
 
+  // Full-screen viewer (F): only the viewer and its transport (§1.4).
+  if (viewerOnly) {
+    return (
+      <div className="app viewer-only" ref={root}>
+        <Viewer />
+        <Shell />
+      </div>
+    );
+  }
+
   return (
     <div className="app" ref={root}>
       <TitleBar />
@@ -86,6 +99,7 @@ export default function App() {
       </div>
       {exportOpen && <ExportSheet />}
       {settingsOpen && <SettingsWindow />}
+      <Shell />
     </div>
   );
 }

@@ -229,6 +229,7 @@ export type Edit =
   | { op: "removeCaptionTrack" }
   | { op: "setCaptionsHidden"; hidden: boolean }
   | { op: "setCaptionStyle"; style: CaptionStyle }
+  | { op: "setCaptionFixes"; asset: Id; fixes: CaptionFix[] }
   | { op: "setGains"; gains: Record<Id, number> };
 
 export interface Outcome { changed: boolean; selection?: Id[] | null; seek?: number | null }

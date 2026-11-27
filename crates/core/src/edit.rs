@@ -63,15 +63,29 @@ pub fn make_clips(p: &Project, payload: &Payload, start: f64, video_track: Id, a
 pub struct ClipPatch {
     pub fade_in: Option<f64>,
     pub fade_out: Option<f64>,
+    #[serde(deserialize_with = "double_option")]
     pub fade_in_curve: Option<Option<FadeCurve>>,
+    #[serde(deserialize_with = "double_option")]
     pub fade_out_curve: Option<Option<FadeCurve>>,
     #[serde(rename = "gainDB")]
     pub gain_db: Option<f64>,
     pub color: Option<Rgba>,
     pub text: Option<TextStyle>,
+    #[serde(deserialize_with = "double_option")]
     pub grade: Option<Option<ColorGrade>>,
+    #[serde(deserialize_with = "double_option")]
     pub transform: Option<Option<ClipTransform>>,
+    #[serde(deserialize_with = "double_option")]
     pub transition_in: Option<Option<Transition>>,
+}
+
+/// Missing key → `None` (unchanged); `null` → `Some(None)` (clear); value → `Some(Some(v))`.
+fn double_option<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
 }
 
 /// A change to a track's switches and levels.
@@ -84,6 +98,7 @@ pub struct TrackPatch {
     pub locked: Option<bool>,
     #[serde(rename = "gainDB")]
     pub gain_db: Option<f64>,
+    #[serde(deserialize_with = "double_option")]
     pub duck_under: Option<Option<Id>>,
     #[serde(rename = "duckDB")]
     pub duck_db: Option<f64>,
@@ -141,6 +156,9 @@ pub enum Edit {
     RemoveCaptionTrack,
     SetCaptionsHidden { hidden: bool },
     SetCaptionStyle { style: CaptionStyle },
+    /// Word fixes for one file's transcript (a retyped or deleted caption). Each fix replaces
+    /// any existing fix for the same word (same source start within 0.5 ms).
+    SetCaptionFixes { asset: Id, fixes: Vec<CaptionFix> },
     /// Clip gains worked out from waveforms (Even Out Levels).
     SetGains { gains: HashMap<Id, f64> },
 }
@@ -623,6 +641,15 @@ fn run(edit: &Edit, p: &mut Project, out: &mut Outcome) {
                 c.style.size = c.style.size.clamp(lo, hi);
             }
         }
+        Edit::SetCaptionFixes { asset, fixes } => {
+            let map = p.caption_fixes.get_or_insert_with(Default::default);
+            let list = map.entry(*asset).or_default();
+            for f in fixes {
+                list.retain(|x| (x.start - f.start).abs() > 0.0005);
+                list.push(f.clone());
+            }
+            list.sort_by(|a, b| a.start.total_cmp(&b.start));
+        }
         Edit::SetGains { gains } => {
             for c in p.clips.iter_mut() {
                 if let Some(g) = gains.get(&c.id)
@@ -777,5 +804,7 @@ mod tests {
         assert_eq!(serde_json::from_str::<Edit>(&s).unwrap(), e);
         let patch: ClipPatch = serde_json::from_str(r#"{"fadeIn":1,"grade":null}"#).unwrap();
         assert_eq!(patch.fade_in, Some(1.0));
+        assert_eq!(patch.grade, Some(None), "null clears");
+        assert_eq!(patch.transform, None, "missing leaves alone");
     }
 }

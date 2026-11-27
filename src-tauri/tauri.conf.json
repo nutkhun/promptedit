@@ -12,12 +12,16 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "PromptEdit",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1024,
-        "minHeight": 640,
-        "dragDropEnabled": true
+        "width": 1480,
+        "height": 940,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "dragDropEnabled": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 26 }
       }
     ],
     "security": {

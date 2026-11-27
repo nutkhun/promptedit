@@ -28,3 +28,4 @@ dist-ssr
 src-tauri/gen/schemas
 # FFmpeg sidecars (fetched by scripts/ffmpeg.mjs)
 src-tauri/binaries/
+/target-*

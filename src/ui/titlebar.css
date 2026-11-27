@@ -1,0 +1,65 @@
+/* Title bar (§1.1): one 52 pt row in `panel`, a solid hairline under it. */
+.pe-titlebar {
+  position: relative; flex: none;
+  height: 52px;
+  display: flex; align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
+  z-index: 5;
+}
+/* macOS: room for the traffic lights (they're drawn by the system over this bar). */
+.pe-titlebar.mac.tauri { padding-left: 78px; }
+.pe-titlebar.win { padding-left: 6px; }
+
+.pe-title {
+  position: absolute; left: 50%; top: 0; bottom: 0;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  max-width: 40%;
+  pointer-events: none;
+}
+.pe-titlebar.tauri .pe-title { pointer-events: auto; }
+.pe-title .name {
+  font-size: 13px; font-weight: 500; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pe-title .dirty { width: 5px; height: 5px; border-radius: 50%; background: var(--text-faint); flex: none; }
+
+.pe-titlebar-actions {
+  margin-left: auto;
+  display: flex; align-items: center;
+  padding-right: 10px;
+}
+.pe-titlebar.win.tauri .pe-titlebar-actions { padding-right: 12px; }
+.pe-titlebar-actions > * + * { margin-left: 8px; }
+
+.pe-magic {
+  height: 26px; padding: 0 11px;
+  display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 999px;
+  background: rgba(var(--ink-rgb), 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.05);
+  color: var(--text); font-size: 11.5px; font-weight: 600;
+  transition: background var(--ease);
+}
+.pe-magic:hover:not(:disabled) { background: rgba(var(--ink-rgb), 0.14); }
+.pe-magic:disabled { opacity: 0.4; }
+
+/* Windows caption buttons: full height, 46 wide; close turns red. */
+.pe-window-controls { display: flex; align-self: stretch; }
+.pe-window-controls button {
+  width: 46px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim);
+  transition: background var(--ease), color var(--ease);
+}
+.pe-window-controls button:hover { background: var(--hover); color: var(--text); }
+.pe-window-controls button.close:hover { background: #C42B1C; color: #FFFFFF; }
+
+/* Windows: the menus, in the title bar. */
+.pe-menubar { display: flex; align-items: center; gap: 1px; }
+.pe-menubar button {
+  height: 26px; padding: 0 9px; border-radius: 6px;
+  font-size: 12px; color: var(--text-dim);
+  transition: background var(--ease), color var(--ease);
+}
+.pe-menubar button:hover, .pe-menubar button.open { background: var(--hover); color: var(--text); }

@@ -1,4 +1,5 @@
 [package]
+default-run = "promptedit"
 name = "promptedit"
 version.workspace = true
 description = "PromptEdit video editor"
@@ -28,6 +29,16 @@ axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "process", "io-util", "fs"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "cors"] }
+
+# MCP server, agent connect and Magic (src/mcp, src/agents.rs, src/magic).
+base64 = "0.22"
+dirs = "6"
+futures-util = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+regex = "1"
+reqwest = { version = "0.13", features = ["rustls", "stream", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tauri-plugin-dialog = "2"
 
 [[bin]]
 name = "promptedit"

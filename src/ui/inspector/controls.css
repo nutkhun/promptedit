@@ -1,0 +1,185 @@
+/* Shared inspector-style controls (src/ui/controls.tsx); sizes from docs/spec/04-ui.md §1.5, §2.4. */
+
+/* ---- Section ---- */
+.ctl-section { display: flex; flex-direction: column; gap: 10px; }
+.ctl-section-head { display: flex; align-items: center; gap: 6px; height: 16px; }
+.ctl-section-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 16px;
+  color: var(--text-faint); transition: color var(--ease);
+}
+.ctl-section-toggle:hover { color: var(--text-dim); }
+.ctl-section-chevron { width: 8px; display: flex; justify-content: center; transition: transform 80ms ease-out; }
+.ctl-section-chevron.open { transform: rotate(90deg); }
+.ctl-section-title {
+  font-size: 10px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; white-space: nowrap;
+}
+.ctl-section-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+.ctl-section-body { display: flex; flex-direction: column; gap: 10px; animation: ctl-reveal 80ms ease-out; }
+@keyframes ctl-reveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.ctl-link {
+  font-size: 11.5px; font-weight: 500; color: var(--text-dim); transition: color var(--ease); flex: none;
+}
+.ctl-link:hover { color: var(--accent); }
+
+/* ---- Rows ---- */
+.ctl-row { display: flex; align-items: center; gap: 8px; height: 28px; min-width: 0; }
+.ctl-row-icon { width: 18px; flex: none; display: flex; justify-content: center; color: var(--text-dim); }
+.ctl-row-label { width: 52px; flex: none; font-size: 11.5px; color: var(--text); white-space: nowrap; }
+.ctl-row-label.auto { width: auto; }
+.ctl-spacer { flex: 1; }
+
+/* ---- ThinSlider ---- */
+.ctl-slider { position: relative; flex: 1; min-width: 0; height: 20px; touch-action: none; }
+.ctl-slider-track {
+  position: absolute; left: 0; right: 0; top: 9px; height: 2px; border-radius: 1px;
+  background: rgba(var(--ink-rgb), 0.12);
+}
+.ctl-slider-fill { position: absolute; left: 0; top: 9px; height: 2px; border-radius: 1px; background: var(--text); }
+.ctl-slider-knob {
+  position: absolute; top: 3.5px; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--text); box-shadow: 0 0 0 3px var(--panel);
+  transition: transform var(--ease);
+}
+.ctl-slider:hover .ctl-slider-knob, .ctl-slider.dragging .ctl-slider-knob { transform: scale(1.12); }
+
+/* ---- Value field ---- */
+.ctl-value {
+  width: 68px; height: 26px; flex: none; display: flex; align-items: center; gap: 4px;
+  border-radius: 7px; background: var(--field); box-shadow: inset 0 0 0 1px transparent;
+  cursor: text;
+}
+.ctl-value.focused { box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.85); }
+.ctl-value input {
+  flex: 1; min-width: 0; height: 100%; border: 0; background: none; padding: 0 6px; text-align: right;
+  font-family: var(--mono); font-size: 11.5px; color: var(--text);
+}
+.ctl-value.with-inside input { padding-right: 0; }
+.ctl-value-inside { flex: none; margin-right: 4px; display: flex; }
+
+/* ---- Text fields ---- */
+.ctl-field {
+  height: 28px; border: 0; border-radius: 8px; background: var(--field); color: var(--text);
+  font-family: var(--mono); font-size: 11.5px; text-align: center; min-width: 0; flex: 1;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.ctl-field:focus { box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.85); }
+.ctl-textarea {
+  width: 100%; height: 68px; resize: none; border: 0; border-radius: 8px; background: var(--field);
+  color: var(--text); font-size: 11.5px; padding: 6px; line-height: 1.35;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.ctl-textarea:focus { box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.85); }
+
+/* ---- MenuField ---- */
+.ctl-menu-field {
+  flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 11px;
+  border-radius: 8px; background: var(--field); box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.05);
+  transition: background var(--ease); text-align: left;
+}
+.ctl-menu-field:hover, .ctl-menu-field.open { background: var(--hover); }
+.ctl-menu-field-label {
+  flex: 1; min-width: 0; font-size: 11.5px; color: var(--text); overflow: hidden; white-space: pre;
+  text-overflow: ellipsis;
+}
+.ctl-chevron { color: var(--text-dim); flex: none; }
+
+/* ---- Popover and menus ---- */
+.ctl-popover {
+  position: fixed; z-index: 1000; background: var(--raised); border-radius: 9px;
+  box-shadow: 0 0 0 1px rgba(var(--ink-rgb), 0.1), 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: ctl-pop 90ms ease-out;
+}
+@keyframes ctl-pop { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+.ctl-menu { padding: 5px; display: flex; flex-direction: column; min-width: 140px; max-height: 70vh; overflow-y: auto; }
+.ctl-menu-item {
+  display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 6px; border-radius: 5px;
+  font-size: 12px; color: var(--text); white-space: pre; text-align: left; width: 100%;
+}
+.ctl-menu-item.active { background: var(--accent); color: #fff; }
+.ctl-menu-item.active .ctl-menu-check { color: #fff; }
+.ctl-menu-check { width: 12px; flex: none; display: flex; justify-content: center; color: var(--text); }
+.ctl-menu-divider { height: 1px; margin: 4px 6px; background: rgba(var(--ink-rgb), 0.1); flex: none; }
+
+/* ---- Chip ---- */
+.ctl-chip {
+  height: 26px; padding: 0 10px; border-radius: 7px; font-size: 10px; font-weight: 500; flex: none;
+  background: var(--field); color: var(--text-dim); transition: background var(--ease), color var(--ease);
+}
+.ctl-chip:hover { background: var(--hover); color: var(--text); }
+.ctl-chip.on, .ctl-chip.on:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+
+/* ---- CurveMenu ---- */
+.ctl-curve {
+  width: 48px; height: 26px; flex: none; display: flex; align-items: center; justify-content: center; gap: 5px;
+  border-radius: 7px; background: var(--field); transition: background var(--ease);
+}
+.ctl-curve:hover, .ctl-curve.open { background: var(--hover); }
+
+/* ---- RampButton ---- */
+.ctl-ramp {
+  width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--ink-rgb), 0.06); color: var(--text-dim); transition: background var(--ease);
+}
+.ctl-ramp:hover { background: rgba(var(--ink-rgb), 0.12); }
+.ctl-ramp.on, .ctl-ramp.on:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+
+/* ---- Colour well and picker ---- */
+.ctl-well {
+  width: 44px; height: 24px; flex: none; border-radius: 6px; padding: 3px; background: var(--field);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.1); transition: background var(--ease);
+}
+.ctl-well:hover, .ctl-well.open { background: var(--hover); }
+.ctl-well-swatch { width: 100%; height: 100%; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.ctl-picker { width: 224px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ctl-picker-sv {
+  position: relative; height: 150px; border-radius: 6px; touch-action: none; cursor: crosshair;
+  background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+}
+.ctl-picker-hue {
+  position: relative; height: 12px; border-radius: 6px; touch-action: none;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+.ctl-picker-puck {
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(0, 0, 0, 0.4); pointer-events: none;
+}
+.ctl-picker-hue .ctl-picker-puck { top: 6px; }
+.ctl-picker-row { display: flex; align-items: center; gap: 8px; }
+.ctl-picker-preview { width: 28px; height: 28px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.15); flex: none; }
+.ctl-picker-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.ctl-picker-swatch { width: 18px; height: 18px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.15); }
+
+/* ---- Colour wheel ---- */
+.ctl-wheel { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; }
+.ctl-wheel-disc { position: relative; width: 78px; height: 78px; border-radius: 50%; background: var(--field); touch-action: none; }
+.ctl-wheel-ring {
+  position: absolute; inset: 0; border-radius: 50%; opacity: 0.6; transition: opacity var(--ease);
+  background: conic-gradient(from 90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+}
+.ctl-wheel-disc:hover .ctl-wheel-ring, .ctl-wheel-disc.dragging .ctl-wheel-ring { opacity: 0.95; }
+.ctl-wheel-cross-h, .ctl-wheel-cross-v { position: absolute; background: rgba(var(--ink-rgb), 0.1); }
+.ctl-wheel-cross-h { left: 7px; right: 7px; top: 38.5px; height: 1px; }
+.ctl-wheel-cross-v { top: 7px; bottom: 7px; left: 38.5px; width: 1px; }
+.ctl-wheel-puck {
+  position: absolute; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+  transition: width 120ms ease-out, height 120ms ease-out, margin 120ms ease-out;
+}
+.ctl-wheel-puck.active { background: var(--accent); }
+.ctl-wheel-label { font-size: 11.5px; color: var(--text-dim); }
+.ctl-wheel-label.active { color: var(--text); }
+
+/* ---- Shape pills (under the ramp and zoom graphs) ---- */
+.ctl-pills { display: flex; gap: 1.5px; padding: 1.5px; border-radius: 4px; background: var(--bg); }
+.ctl-pill {
+  height: 15px; padding: 0 6px; border-radius: 3px; font-size: 10px; font-weight: 500;
+  color: var(--text); opacity: 0.55; display: flex; align-items: center; justify-content: center;
+}
+.ctl-pill.on { opacity: 1; background: rgba(var(--ink-rgb), 0.14); }
+
+/* A menu field on its own line (not in a row) keeps its height in the section's column. */
+.ctl-section-body > .ctl-menu-field { flex: none; width: 100%; }

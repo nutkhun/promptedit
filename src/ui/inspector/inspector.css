@@ -1,0 +1,56 @@
+/* The inspector panel (docs/spec/04-ui.md §1.5). */
+.insp { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--panel); }
+.insp-header { height: 44px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 16px; }
+.insp-header-icon { width: 18px; flex: none; display: flex; justify-content: center; color: var(--text-dim); }
+.insp-title {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.insp-body {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 16px 18px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.insp-hint { font-size: 10px; color: var(--text-faint); }
+.insp-note { font-size: 10.5px; color: var(--text-faint); line-height: 1.35; }
+.insp-transition-note { font-size: 10px; color: var(--text-faint); padding-left: 26px; margin-top: -4px; }
+
+/* Ramp and zoom graphs */
+.insp-graph { padding: 8px; border-radius: 7px; background: var(--field); display: flex; flex-direction: column; gap: 5px; }
+.insp-graph-plot { position: relative; touch-action: none; }
+.insp-graph-label { font-family: var(--mono); font-size: 10.5px; fill: var(--text); pointer-events: none; }
+.insp-graph-foot { display: flex; align-items: center; }
+.insp-graph-length { display: flex; align-items: baseline; gap: 4px; font-size: 10.5px; }
+.insp-graph-length-label { color: var(--text-faint); }
+.insp-graph-length .mono { color: var(--text-dim); font-size: 10.5px; }
+
+/* Caption colour rows */
+.insp-eye {
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex: none;
+  color: var(--text-dim); transition: filter var(--ease);
+}
+.insp-eye.off { color: var(--text-faint); }
+.insp-eye:hover { filter: brightness(1.1); }
+
+/* Font picker */
+.insp-font-field { font-family: var(--font); }
+.insp-fonts { width: 260px; height: 360px; display: flex; flex-direction: column; background: var(--panel); border-radius: 9px; overflow: hidden; }
+.insp-fonts-search { height: 34px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; color: var(--text-faint); }
+.insp-fonts-search input { flex: 1; min-width: 0; border: 0; background: none; font-size: 11.5px; color: var(--text); }
+.insp-fonts-search input::placeholder { color: var(--text-faint); }
+.insp-fonts-rule { height: 1px; background: var(--stroke); flex: none; }
+.insp-fonts-list { flex: 1; overflow-y: auto; padding: 4px; }
+.insp-font-row {
+  width: 100%; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px;
+  font-size: 14px; color: var(--text); text-align: left; transition: background var(--ease);
+}
+.insp-font-row:hover, .insp-font-row.active { background: var(--hover); }
+.insp-font-row span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.insp-font-row .check { color: var(--accent); flex: none; }
+.insp-fonts-empty { padding: 12px; font-size: 11.5px; color: var(--text-faint); }
+.insp-caption-text {
+  width: 100%; resize: none; border: 0; border-radius: 8px; background: var(--field); color: var(--text);
+  font-size: 12px; font-weight: 500; padding: 7px 8px; line-height: 1.35; overflow: hidden;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.insp-caption-text:focus { box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.85); }
+.insp-caption-text:disabled { color: var(--text-dim); }

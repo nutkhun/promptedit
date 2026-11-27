@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { api } from "./api";
 import type { Edit, Id, Probe, Project, Snapshot } from "./model";
 import { projectDuration, snapFrame } from "./timing";
+import { clampView, sameView, zoomAround, zoomFit } from "./timeline/viewMath";
 
 export type Tool = "select" | "cut";
 export type Theme = "auto" | "dark" | "grey" | "amber" | "light";
@@ -15,6 +16,9 @@ export interface View {
   scrollX: number;
   scrollY: number;
   rowHeight: number;
+  /** The timeline canvas size (ruler included, scroll bars excluded); reported by the timeline. */
+  viewWidth: number;
+  viewHeight: number;
 }
 
 const settingsKey = "promptedit.settings";
@@ -26,10 +30,22 @@ interface Settings {
   audioScrubbing: boolean;
   timeStyle: "timecode" | "simple";
   playFromSkimmer: boolean;
+  /** Media panel layout (Settings › General › Media). */
+  mediaLayout: "thumbnails" | "list";
+  /** Saved projects save themselves ~2 s after an edit (Settings › General › Auto-save). */
+  autosave: boolean;
+  /** Last Settings tab. */
+  settingsTab: "general" | "shortcuts" | "magic" | "updates";
+  /** Settings › Magic: show the Magic button; watch Magic work; let AI apps edit. */
+  magicEnabled: boolean;
+  magicShowWork: boolean;
+  agentsEnabled: boolean;
 }
 const defaultSettings: Settings = {
-  theme: "dark", thumbnails: true, sticky: false, skimming: true, audioScrubbing: true,
+  theme: "dark", thumbnails: true, sticky: false, skimming: true, audioScrubbing: false,
   timeStyle: "timecode", playFromSkimmer: true,
+  mediaLayout: "thumbnails", autosave: true, settingsTab: "shortcuts",
+  magicEnabled: true, magicShowWork: true, agentsEnabled: true,
 };
 function loadSettings(): Settings {
   try {
@@ -55,13 +71,19 @@ export interface State extends Settings {
   playing: boolean;
   loop: boolean;
   /** Hover time on the timeline while skimming, or a library hover-scrub. */
-  skim?: { time: number } | { asset: Id; time: number };
+  skim?: { time: number } | { asset: Id; time: number; note?: "In" | "Out" };
   tool: Tool;
   /** Snapping is never saved: on at every launch. */
   snapping: boolean;
   view: View;
   exportOpen: boolean;
   settingsOpen: boolean;
+  /** Full-screen viewer (F): only the viewer and transport show. */
+  viewerOnly: boolean;
+  /** Imports running (the Media panel shows a spinner). */
+  importing: number;
+  /** Files are being dragged over the window: the Media panel shows its drop overlay. */
+  dropHover: boolean;
   error?: string;
   /** Copied clips (⌘C) and grade (⌥⌘C). */
   clipboard: Project["clips"];
@@ -74,7 +96,12 @@ export interface State extends Settings {
   redo: () => Promise<void>;
   seek: (t: number) => void;
   select: (ids: Iterable<Id>) => void;
+  /** Every timeline zoom/scroll/row change goes through here: clamped to the timeline's limits. */
   setView: (v: Partial<View>) => void;
+  /** Zoom the timeline by a factor, anchored on the playhead (View › Zoom In/Out, wheel, pinch). */
+  zoomBy: (factor: number) => void;
+  /** View › Zoom to Fit. */
+  zoomToFit: () => void;
   setSetting: <K extends keyof Settings>(k: K, v: Settings[K]) => void;
   set: (s: Partial<State>) => void;
 }
@@ -96,9 +123,12 @@ export const useStore = create<State>((set, get) => ({
   loop: false,
   tool: "select",
   snapping: true,
-  view: { pps: 80, scrollX: 0, scrollY: 0, rowHeight: 62 },
+  view: { pps: 80, scrollX: 0, scrollY: 0, rowHeight: 62, viewWidth: 900, viewHeight: 300 },
   exportOpen: false,
   settingsOpen: false,
+  viewerOnly: false,
+  importing: 0,
+  dropHover: false,
   clipboard: [],
 
   apply: (s) => {
@@ -126,7 +156,12 @@ export const useStore = create<State>((set, get) => ({
     set({ playhead: Math.max(0, snapFrame(p, Math.min(t, Math.max(projectDuration(p), t)))) });
   },
   select: (ids) => set({ selection: new Set(ids), mediaSelection: new Set() }),
-  setView: (v) => set({ view: { ...get().view, ...v } }),
+  setView: (v) => {
+    const view = clampView(get().project, get().view, v);
+    if (!sameView(view, get().view)) set({ view });
+  },
+  zoomBy: (factor) => set({ view: zoomAround(get().project, get().view, get().playhead, get().view.pps * factor) }),
+  zoomToFit: () => set({ view: zoomFit(get().project, get().view) }),
   setSetting: (k, v) => {
     set({ [k]: v } as Partial<State>);
     const s = get();

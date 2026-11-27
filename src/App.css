@@ -12,3 +12,8 @@
 .splitter-h:active::after { background: rgba(var(--ink-rgb), 0.45); }
 .timeline-pane { flex: none; background: var(--bg); overflow: hidden; display: flex; flex-direction: column; }
 .placeholder { padding: 16px; color: var(--text-faint); }
+.pe-drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none;
+  padding: 3px 8px; border-radius: 5px; background: rgba(13, 13, 13, 0.92); color: #fff;
+  font: 600 10.5px var(--font); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+}

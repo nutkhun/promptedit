@@ -1,0 +1,85 @@
+/* Viewer (§1.4). The picture is black in every theme. */
+.pe-viewer { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.pe-viewer.only { background: #000000; }
+.pe-picture-area { flex: 1; min-height: 0; margin: 16px 16px 0; position: relative; overflow: hidden; }
+.pe-picture-area.scrolls { overflow: scroll; }
+.pe-picture-centre { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.pe-picture-area.scrolls .pe-picture-centre { position: relative; inset: auto; }
+.pe-picture {
+  position: relative; flex: none; background: #000000;
+  /* Square corners, as exports are; a faint edge just outside the picture. */
+  box-shadow: 0 0 0 1px rgba(var(--ink-rgb), 0.05);
+}
+.pe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Always Dark's colours: the viewer is black on Light too. */
+.pe-empty-prompt {
+  --prompt-text: #F2F2F0; --prompt-faint: #5C5C59; --prompt-outline: #2C2C2C;
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+}
+.pe-empty-prompt .box {
+  width: 62%; height: 58%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  padding: 0 22px; border-radius: 16px; text-align: center;
+  position: relative;
+}
+.pe-empty-prompt .box::before {
+  content: ""; position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+  border: 1.5px dashed var(--prompt-outline);
+  transition: border-color var(--ease);
+}
+.pe-empty-prompt .box:hover::before { border-color: rgba(255, 255, 255, 0.3); }
+.pe-empty-prompt .headline { font-size: 13px; font-weight: 600; color: var(--prompt-text); }
+.pe-empty-prompt .sub { font-size: 11.5px; color: var(--prompt-faint); margin-top: -6px; white-space: pre-wrap; }
+
+.pe-source-label {
+  position: absolute; left: 10px; top: 10px; height: 24px;
+  display: flex; align-items: center; gap: 6px; padding: 0 8px;
+  border-radius: 6px; background: rgba(0, 0, 0, 0.65);
+  color: var(--on-picture); font-size: 11.5px; pointer-events: none; white-space: nowrap;
+}
+.pe-source-label .name { font-weight: 600; }
+.pe-source-label .note { font-weight: 600; }
+.pe-source-label .time { color: #9A9A96; }
+.pe-source-label .time.bright { color: var(--on-picture); }
+
+/* Transport (76 tall). */
+.pe-transport { position: relative; flex: none; height: 76px; padding: 0 16px; display: flex; align-items: center; }
+.pe-transport-side { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pe-transport-centre {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 4px;
+}
+.pe-timecode {
+  margin-left: -7px; height: 26px; padding: 0 7px;
+  display: inline-flex; align-items: center;
+  border-radius: 6px; font-size: 20px; font-weight: 500; letter-spacing: 0.4px; color: var(--text);
+  white-space: nowrap; transition: background var(--ease);
+  cursor: text;
+}
+.pe-timecode:hover, .pe-timecode.editing { background: var(--field); }
+.pe-timecode.editing { box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.85); }
+.pe-timecode input {
+  border: 0; padding: 0; margin: 0; background: transparent; outline: none;
+  font: inherit; letter-spacing: inherit; color: inherit; width: auto;
+}
+.pe-duration-total { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; align-self: center; padding-top: 5px; }
+.pe-output-meters { display: flex; gap: 2px; padding: 0 4px; height: 24px; }
+.pe-zoom-menu {
+  height: 24px; padding: 0 8px; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--field); color: var(--text-dim);
+  font-size: 11.5px; font-weight: 500;
+}
+.pe-zoom-menu:hover { color: var(--text); }
+
+.pe-play { margin: 0 15px; border-radius: 50%; }
+.pe-play .disc {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  /* A 5 pt ring of the transport colour sets the button off from the bar. */
+  background: var(--text); color: var(--on-text);
+  box-shadow: 0 0 0 5px var(--transport), 0 0 0 6px rgba(var(--ink-rgb), 0.05);
+  transition: transform var(--ease), background var(--ease);
+}
+.pe-play:hover .disc { background: var(--ink); transform: scale(1.05); }

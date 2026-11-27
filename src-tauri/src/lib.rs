@@ -1,6 +1,12 @@
 //! PromptEdit's app shell: the open document, file I/O and media, exposed to the UI as commands.
 
+pub mod agents;
+pub mod magic;
+pub mod mcp;
 pub mod media;
+pub mod menu;
+pub mod shell;
+pub mod render;
 
 use promptedit_core::edit::{Edit, Outcome};
 use promptedit_core::history::Document;
@@ -32,7 +38,7 @@ pub struct Snapshot {
     outcome: Option<Outcome>,
 }
 
-fn snapshot(state: &AppState, outcome: Option<Outcome>) -> Snapshot {
+pub fn snapshot(state: &AppState, outcome: Option<Outcome>) -> Snapshot {
     let doc = state.doc.lock().unwrap();
     let file = state.file.lock().unwrap().clone();
     Snapshot {
@@ -145,10 +151,10 @@ fn redo(state: State<AppState>) -> Snapshot {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
-    snapshot: Snapshot,
-    added: Vec<Id>,
-    probes: Vec<(Id, media::Probe)>,
-    failed: Vec<String>,
+    pub snapshot: Snapshot,
+    pub added: Vec<Id>,
+    pub probes: Vec<(Id, media::Probe)>,
+    pub failed: Vec<String>,
 }
 
 /// Brings files into the library (not undoable, as in Editroom). Files the engine can't read
@@ -301,7 +307,10 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
             let asset: Id = from_value(arg("asset")).map_err(|e| e.to_string())?;
             ok(transcode_asset(state, cache_dir, asset)?)
         }
-        other => Err(format!("Unknown command {other}")),
+        other => render::dispatch(cache_dir, other, &args)
+            .or_else(|| shell::dispatch(state, cache_dir, other, &args))
+            .or_else(|| mcp::commands::dispatch(state, cache_dir, other, &args))
+            .unwrap_or_else(|| Err(format!("Unknown command {other}"))),
     }
 }
 
@@ -309,7 +318,14 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .setup(|app| {
+            // The MCP server for AI apps and Magic (src/mcp), then the shell.
+            mcp::commands::start_app(app.handle().clone());
+            shell::setup(app)
+        })
+        .on_menu_event(menu::on_menu_event)
         .invoke_handler(tauri::generate_handler![
             get_project,
             new_project,
@@ -323,7 +339,42 @@ pub fn run() {
             import_media,
             probe_media,
             transcode_media,
+            render::audio_pcm,
+            render::audio_waveform,
+            render::export_begin,
+            render::export_append,
+            render::export_loudness,
+            render::export_finish,
+            render::export_cancel,
+            menu::set_app_menu,
+            shell::take_open_files,
+            shell::path_exists,
+            shell::reveal_path,
+            shell::user_dirs,
+            shell::set_settings_locked,
+            shell::set_export_target,
+            shell::quit_app,
+            shell::relink_asset,
+            mcp::commands::mcp_status,
+            mcp::commands::mcp_set_enabled,
+            mcp::commands::mcp_report_view,
+            mcp::commands::mcp_export_update,
+            mcp::commands::agents_status_cmd,
+            mcp::commands::agents_connect,
+            mcp::commands::agents_disconnect,
+            mcp::commands::agents_cancel_waiting,
+            mcp::commands::agents_reopen_claude,
+            mcp::commands::agents_connect_prompt,
+            magic::commands::magic_state,
+            magic::commands::magic_start,
+            magic::commands::magic_stop,
+            magic::commands::magic_dismiss_note,
+            magic::commands::magic_models,
+            magic::commands::magic_availability,
+            magic::commands::magic_local_status,
+            magic::commands::magic_sign_in,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running PromptEdit");
+        .build(tauri::generate_context!())
+        .expect("error while running PromptEdit")
+        .run(shell::on_run_event);
 }

@@ -3,6 +3,12 @@
 // sound: Web Audio over PCM extracted by FFmpeg; export: same renderer + WebCodecs encoder).
 
 import type { Id } from "../model";
+import type { MeterLevels } from "./audio/meters";
+import type { Waveform } from "./audio/waveform";
+import { MediaEngine } from "./engine";
+
+export type { MeterLevels, MeterReading } from "./audio/meters";
+export type { Waveform } from "./audio/waveform";
 
 export interface ExportOptions {
   /** Full output path, chosen by the person. */
@@ -16,6 +22,8 @@ export interface ExportOptions {
   loudness?: number;
   /** Only the in/out range. */
   rangeOnly: boolean;
+  /** Video formats: false leaves the sound out (Export › Audio › "No audio"). Default true. */
+  includeAudio?: boolean;
   /** How the picture fills a different frame shape: centre crop with an offset (-1…1). */
   reframe?: { x: number; y: number };
 }
@@ -46,6 +54,10 @@ export interface Engine {
   scrubAudio(t: number): void;
   export(options: ExportOptions, onProgress: (p: ExportProgress) => void): Promise<void>;
   cancelExport(): void;
+  /** Every meter (per track, master, left, right) with peak hold and clip state, in dBFS (−60 floor). */
+  levels?(): MeterLevels;
+  /** The whole waveform (peaks, left, right, rms at 200/s). Cached. */
+  waveformData?(asset: Id): Promise<Waveform | undefined>;
 }
 
 /** Placeholder until the real engine lands: draws nothing, plays a clock. */
@@ -63,5 +75,6 @@ class NullEngine implements Engine {
   cancelExport() {}
 }
 
-export let engine: Engine = new NullEngine();
+/** The real engine in a browser/webview; the null one where there's no DOM (unit tests). */
+export let engine: Engine = typeof window !== "undefined" && typeof document !== "undefined" ? new MediaEngine() : new NullEngine();
 export function setEngine(e: Engine) { engine = e; }
