@@ -77,8 +77,12 @@ if (target.includes('apple-darwin')) {
   mkdirSync(work, { recursive: true });
   const zip = join(work, 'ffmpeg.zip');
   run('curl', ['-fsSL', '-o', zip, WINDOWS_BUILD]);
-  run('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${work}' -Force`]);
-  const dir = readdirSync(work).find((d) => d.startsWith('ffmpeg-'));
+  // Windows' own bsdtar reads zip files (a Git-for-Windows GNU tar earlier on PATH would not, and
+  // PowerShell's Expand-Archive breaks when the runner mixes PowerShell 5 and 7 modules).
+  const tar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+  run(tar, ['-xf', zip, '-C', work]);
+  const dir = readdirSync(work).find((d) => d.startsWith('ffmpeg-') && !d.endsWith('.zip'));
+  if (!dir) throw new Error(`FFmpeg archive didn't unpack as expected: ${readdirSync(work).join(', ')}`);
   for (const name of ['ffmpeg', 'ffprobe']) copyFileSync(join(work, dir, 'bin', `${name}.exe`), dest(name));
 } else {
   for (const name of ['ffmpeg', 'ffprobe']) {
