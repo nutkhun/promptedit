@@ -77,7 +77,7 @@ if (target.includes('apple-darwin')) {
   mkdirSync(work, { recursive: true });
   const zip = join(work, 'ffmpeg.zip');
   run('curl', ['-fsSL', '-o', zip, WINDOWS_BUILD]);
-  run('tar', ['-xf', zip, '-C', work]); // bsdtar on Windows runners reads zip
+  run('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${work}' -Force`]);
   const dir = readdirSync(work).find((d) => d.startsWith('ffmpeg-'));
   for (const name of ['ffmpeg', 'ffprobe']) copyFileSync(join(work, dir, 'bin', `${name}.exe`), dest(name));
 } else {
