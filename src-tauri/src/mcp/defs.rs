@@ -122,7 +122,8 @@ pub fn definitions() -> Vec<Value> {
         // Delivering, finding, marking, framing, and the rest.
         tool("export", "Export", "Exports the cut to a file, in the background (export_status says how it's going, or set wait). Saved in the folder the person last exported to (else beside the project, else Movies); never over an existing file. Not available while making a Magic edit.",
              json!({"name": st("File name, without extension (default: the project's)."),
-                    "format": {"type": "string", "enum": ["video", "audio"], "description": "An MP4, or a WAV of the sound (default video)."},
+                    "format": {"type": "string", "enum": ["video", "audio", "prores", "mp3"], "description": "video: an MP4 (default); audio: a WAV of the sound; prores: a ProRes MOV (for further editing or delivery masters; large); mp3: an MP3 of the sound (quality high is 320 kb/s, web 192)."},
+                    "prores_profile": {"type": "string", "enum": ["proxy", "lt", "standard", "hq"], "description": "For prores: ProRes 422 Proxy, LT, 422 (standard, the default) or HQ."},
                     "shape": {"type": "string", "enum": ["original", "vertical", "square", "portrait"], "description": "original is the sequence's own shape; vertical 9:16, square 1:1 and portrait 4:5 crop it."},
                     "height": {"type": "integer", "description": "Output height in pixels (for vertical, square and portrait: the short side), e.g. 720, 1080, 2160. Default: the sequence's."},
                     "codec": {"type": "string", "enum": ["h264", "hevc"]}, "quality": {"type": "string", "enum": ["high", "web"]},

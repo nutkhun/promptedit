@@ -1,7 +1,8 @@
 // Turns evaluated layers (layers.ts) into pictures the compositor can draw: decoded frames,
 // stills, text bitmaps and solid colours, each placed on the layout canvas (fit, §1.2 step 3).
 
-import type { Media } from "./decode/media";
+import { copyPlanes, planeInfo } from "./color/planes";
+import type { Media, SourceColorInfo } from "./decode/media";
 import type { DecodeMode, Lane } from "./decode/video-source";
 import type { DrawLayer, Rect, Rotation } from "./gl/compositor";
 import type { GradeBaker } from "./grade";
@@ -16,8 +17,8 @@ export function fitInto(W: number, H: number, w: number, h: number): Rect {
 
 export interface Resolved {
   layers: DrawLayer[];
-  /** Frames to close once drawn. */
-  frames: VideoFrame[];
+  /** Frames (and copied planes) to close once drawn. */
+  frames: { close(): void }[];
   /** False when some picture wasn't available (yet): draw again when it arrives. */
   complete: boolean;
   /** Decoder lanes used, per file (so look-ahead decoding uses other lanes). */
@@ -31,7 +32,7 @@ export async function resolveLayers(
   const W = canvas.width, H = canvas.height;
   const busy = new Map<string, Set<Lane>>(busyIn ?? []);
   let complete = true;
-  const frames: VideoFrame[] = [];
+  const frames: { close(): void }[] = [];
   const out = await Promise.all(layers.map(async (l): Promise<DrawLayer | undefined> => {
     const base = { opacity: l.opacity, wipe: l.wipe, transform: l.transform, cube: baker.cube(l.grade, onCubeReady) };
     const s = l.source;
@@ -65,11 +66,33 @@ export async function resolveLayers(
         if (!frame) { complete = false; return undefined; }
         frames.push(frame);
         if (mode === "play" && Math.abs(frame.timestamp / 1e6 - src.ptsOf(src.indexFor(s.pick))) > 1e-4) complete = false;
-        const fw = frame.displayWidth, fh = frame.displayHeight;
-        const [w, h] = rotation % 180 === 0 ? [fw, fh] : [fh, fw];
-        return { ...base, picture: { kind: "texture", source: frame, width: w, height: h, rotation, rect: fitInto(W, H, w, h) } };
+        const color = media.sourceColor(s.pick.asset);
+        const picture = await videoPicture(frame, rotation, W, H, color);
+        if (picture.kind === "planes") frames.push(picture.planes);
+        return { ...base, picture, sourceCube: color.cube };
       }
     }
   }));
   return { layers: out.filter((x): x is DrawLayer => !!x), frames, complete, busy };
+}
+
+/**
+ * A decoded frame placed on the canvas. HDR and Log frames go as their raw planes when the browser
+ * hands them over (our own Y′CbCr → R′G′B′, §3.7), else as a half-float upload with the browser's
+ * Y′CbCr conversion only; ordinary video uploads as it is.
+ */
+export async function videoPicture(frame: VideoFrame, rotation: Rotation, W: number, H: number, color: SourceColorInfo): Promise<DrawLayer["picture"]> {
+  const fw = frame.displayWidth, fh = frame.displayHeight;
+  const [w, h] = rotation % 180 === 0 ? [fw, fh] : [fh, fw];
+  const rect = fitInto(W, H, w, h);
+  // High bit depth ordinary video too: Chromium's own 10-bit conversion is off by up to 9/255 in
+  // saturated colours, where ours matches Core Image's (8-bit frames match either way and stay on
+  // the browser's faster path).
+  const deep = (planeInfo(frame.format)?.bits ?? 8) > 8;
+  if (color.kind !== "standard" || deep) {
+    const planes = await copyPlanes(frame, color);
+    if (planes) return { kind: "planes", planes, width: w, height: h, rotation, rect };
+    return { kind: "texture", source: frame, width: w, height: h, rotation, rect, video: true, float: true };
+  }
+  return { kind: "texture", source: frame, width: w, height: h, rotation, rect, video: true };
 }

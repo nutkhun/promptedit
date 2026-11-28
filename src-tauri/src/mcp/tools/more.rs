@@ -296,7 +296,18 @@ fn export(c: &Call) -> Out {
     if q.clips.is_empty() {
         return Err("The timeline is empty.".into());
     }
-    let format = if string(c.args, "format") == Some("audio") { "audio" } else { "video" };
+    // video: MP4; prores: a ProRes MOV; audio: WAV; mp3.
+    let format = match string(c.args, "format") {
+        Some(f @ ("audio" | "prores" | "mp3")) => f,
+        _ => "video",
+    };
+    let sound_only = matches!(format, "audio" | "mp3");
+    let prores_profile = string(c.args, "prores_profile");
+    if let Some(p) = prores_profile
+        && !["proxy", "lt", "standard", "hq"].contains(&p)
+    {
+        return Err("prores_profile is proxy, lt, standard or hq.".into());
+    }
     let shape = string(c.args, "shape").unwrap_or("original");
     if !["original", "vertical", "square", "portrait"].contains(&shape) {
         return Err("shape is original, vertical, square or portrait.".into());
@@ -317,7 +328,7 @@ fn export(c: &Call) -> Out {
     if range_only && q.play_range().is_none() {
         return Err("There's no in/out range; set_in_out sets one.".into());
     }
-    if format == "audio" && !q.clips.iter().any(|x| x.kind == ClipKind::Audio) {
+    if sound_only && !q.clips.iter().any(|x| x.kind == ClipKind::Audio) {
         return Err("There's no sound on the timeline.".into());
     }
     // Where the person last exported to, else beside the project, else Movies (Videos on Windows).
@@ -335,7 +346,12 @@ fn export(c: &Call) -> Out {
     if base.is_empty() {
         base = title;
     }
-    let ext = if format == "audio" { "wav" } else { "mp4" };
+    let ext = match format {
+        "audio" => "wav",
+        "mp3" => "mp3",
+        "prores" => "mov",
+        _ => "mp4",
+    };
     let exports = &crate::mcp::mcp().exports;
     let mut path = folder.join(format!("{base}.{ext}"));
     let mut n = 2;
@@ -357,12 +373,13 @@ fn export(c: &Call) -> Out {
         range_only,
         reframe_x: num(c.args, "reframe_x").unwrap_or(0.5).clamp(0.0, 1.0),
         reframe_y: num(c.args, "reframe_y").unwrap_or(0.5).clamp(0.0, 1.0),
+        prores_profile: (format == "prores").then(|| prores_profile.unwrap_or("standard").to_string()),
     };
     exports.add(request.clone());
     // The UI's export pipeline (WebGL frames + encoder) runs it and reports with mcp_export_update.
     c.host.emit("mcp-export", serde_json::to_value(&request).unwrap_or(Value::Null));
     let (w, h) = render_size(&q, shape, height);
-    let mut out = json!({"file": file, "size": if format == "audio" { "audio".to_string() } else { format!("{w}×{h}") }, "status": "started"});
+    let mut out = json!({"file": file, "size": if sound_only { "audio".to_string() } else { format!("{w}×{h}") }, "status": "started"});
     if boolean(c.args, "wait") == Some(true) {
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs(240) {

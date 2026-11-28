@@ -6,7 +6,20 @@ import { api, fileURL, mediaPath } from "../../api";
 import type { Id, MediaAsset, Probe, Project } from "../../model";
 import { store } from "../../store";
 import type { Rotation } from "../gl/compositor";
+import { sourceColorOf, sourceCube, yuvCoefficients, type SourceColorKind } from "../color/source-color";
+import type { YuvColor } from "../color/planes";
 import { VideoSource } from "./video-source";
+
+/** How a file's picture becomes Rec.709 (§3.7): its kind, the conversion cube, and its Y′CbCr. */
+export interface SourceColorInfo extends YuvColor {
+  kind: SourceColorKind;
+  cube?: Float32Array;
+}
+
+const STANDARD: SourceColorInfo = { kind: "standard", k: [0.2126, 0.0722], fullRange: false };
+
+/** The probe fields that describe the picture's colour (kept for an edit-friendly copy, below). */
+const COLOR_FIELDS = ["colorPrimaries", "colorTransfer", "colorMatrix", "colorRange", "sourceColor"] as const;
 
 /** Stills larger than this are scaled down on load (GPU texture limits). */
 const MAX_STILL = 4096;
@@ -50,7 +63,13 @@ export class Media {
           if (!b || mediaPath(b) === path) throw e;
           // A re-encoded copy is already upright (ffmpeg applies the rotation): use the copy's probe.
           const probe = await api.probeMedia(mediaPath(b)).catch(() => undefined);
-          if (probe) store().set({ probes: { ...store().probes, [id]: probe } });
+          if (probe) {
+            // FFmpeg keeps the samples' curve and matrix but not Apple Log's sample-description tag:
+            // the copy is described by the original's colour.
+            const before = store().probes[id];
+            if (before) for (const k of COLOR_FIELDS) if (before[k] !== undefined) (probe as unknown as Record<string, unknown>)[k] = before[k];
+            store().set({ probes: { ...store().probes, [id]: probe } });
+          }
           return this.video(id);
         },
       ).catch(() => undefined).then((v) => {
@@ -126,6 +145,17 @@ export class Media {
       }
     }
     return 0;
+  }
+
+  /** HDR / Log conversion for a video file (standard until its probe is in; see `rotation`). */
+  sourceColor(id: Id): SourceColorInfo {
+    const p = store().probes[id];
+    const kind = sourceColorOf(p);
+    if (kind === "standard") {
+      if (!p?.colorMatrix && !p?.colorRange) return STANDARD;
+      return { kind, k: yuvCoefficients(p.colorMatrix, kind), fullRange: p.colorRange === "pc" };
+    }
+    return { kind, cube: sourceCube(kind), k: yuvCoefficients(p?.colorMatrix, kind), fullRange: p?.colorRange === "pc" };
   }
 
   /** Waits for a pending probe (for exports, where the first frame must already be upright). */

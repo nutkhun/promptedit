@@ -1,5 +1,6 @@
-// Projects and media files: New / Open / Save / Save As (.room), Import, files opened from the OS or
-// dropped on the window (docs/spec/04-ui.md §1.9, §6.3), recent projects and the last session.
+// Projects and media files: New / Open / Save / Save As (.room), Import (files, or a folder to link),
+// files opened from the OS or dropped on the window (docs/spec/04-ui.md §1.9, §6.3), recent projects,
+// auto-save and the recovery copy, and reopening the last session (docs/spec/01-model.md §1.3–§1.4).
 //
 // Native dialogs come from tauri-plugin-dialog. In a plain browser (the dev server, tests) there are no
 // file dialogs, so a prompt asks for absolute paths instead.
@@ -10,7 +11,7 @@ import { api, call, inTauri, isMac } from "../../api";
 import type { Id, ImportResult, MediaAsset, Probe, Snapshot } from "../../model";
 import { store } from "../../store";
 import { showAlert } from "../Alerts";
-import { requestReveal } from "./reveal";
+import { offerToLocateFolders, resetFolders, showImported, syncFolders } from "../library/folders";
 
 export const PROJECT_EXTENSIONS = ["room", "cutplay"];
 /** What the open panel offers (§6.2): common formats plus those FFmpeg converts. */
@@ -44,6 +45,100 @@ function noteRecent(path: string) {
 export const clearRecents = () => persistRecents([]);
 export const lastSession = (): string | null => { try { return localStorage.getItem(LAST_SESSION_KEY); } catch { return null; } };
 const forgetSession = () => { try { localStorage.removeItem(LAST_SESSION_KEY); } catch { /* ignore */ } };
+const setLastSession = (v: string) => { try { localStorage.setItem(LAST_SESSION_KEY, v); } catch { /* ignore */ } };
+
+// ---- The recovery copy (§1.3: `lastSession` "untitled", `recoveryFor`) ----
+
+/** `lastSession` for untitled work kept in the recovery copy. */
+const UNTITLED = "untitled";
+const RECOVERY_FOR_KEY = "recoveryFor";
+/** The project file the recovery copy holds unsaved changes to (Auto-save off). */
+const recoveryFor = (): string | null => { try { return localStorage.getItem(RECOVERY_FOR_KEY); } catch { return null; } };
+function setRecoveryFor(path: string | null) {
+  try { if (path) localStorage.setItem(RECOVERY_FOR_KEY, path); else localStorage.removeItem(RECOVERY_FOR_KEY); } catch { /* ignore */ }
+}
+/** The project last written to the recovery copy: an unchanged project isn't written again. */
+let lastRecovered: unknown = null;
+
+async function writeRecovery() {
+  const s = store();
+  if (lastRecovered === s.project) return true;
+  try {
+    s.apply(await call<Snapshot>("recovery_save"));
+    lastRecovered = store().project;
+    return true;
+  } catch (e) {
+    console.warn("recovery copy", e);
+    return false;
+  }
+}
+
+async function discardRecovery() {
+  lastRecovered = null;
+  setRecoveryFor(null);
+  try { await call("recovery_discard"); } catch { /* nothing to remove */ }
+}
+
+/**
+ * Auto-save (Swift `autosaveNow`), run ~2 s after the last change and when the window closes. A saved
+ * project with Auto-save on is written in place. With Auto-save off its changes wait in the recovery copy.
+ * Untitled work goes to the recovery copy (and reopens at the next launch); untitled and empty, the copy
+ * is removed.
+ */
+export async function autosaveNow() {
+  // The backend commits any live change before it writes (save_project, recovery_save). Not committing
+  // here keeps the project object unchanged when there's nothing new, so this doesn't run again and again.
+  const now = store();
+  const empty = now.project.clips.length === 0 && now.project.assets.length === 0;
+  if (now.file && now.autosave) {
+    if (!now.dirty) return;
+    await saveQuietly();
+    setLastSession(now.file);
+  } else if (now.file) {
+    if (!now.dirty) return;
+    if (await writeRecovery()) {
+      setRecoveryFor(now.file);
+      setLastSession(now.file);
+    }
+  } else if (empty) {
+    await discardRecovery();
+    if (lastSession() === UNTITLED) forgetSession();
+  } else if (now.dirty && (await writeRecovery())) {
+    setRecoveryFor(null);
+    setLastSession(UNTITLED);
+  }
+}
+
+/** Unsaved changes are let go: the recovery copy is removed (Swift `dropUnsaved`). */
+async function dropUnsaved() {
+  await discardRecovery();
+  if (!store().file && lastSession() === UNTITLED) forgetSession();
+}
+
+/**
+ * Launch: reopens what was being worked on last time — the project file, or untitled work from the
+ * recovery copy (still unsaved). Unsaved changes to that file from last time (Auto-save off) are put back
+ * over it, still unsaved.
+ */
+export async function restoreLastSession() {
+  const last = lastSession();
+  if (!last) return;
+  if (last === UNTITLED) {
+    try {
+      applyFresh(await call<Snapshot>("recovery_open", { file: null }));
+      lastRecovered = store().project;
+    } catch { forgetSession(); }
+    return;
+  }
+  if (!(await call<boolean>("path_exists", { path: last }).catch(() => false))) return;
+  await openProjectPath(last, false);
+  if (recoveryFor() === last && store().file === last) {
+    try {
+      applyFresh(await call<Snapshot>("recovery_open", { file: last }));
+      lastRecovered = store().project;
+    } catch { setRecoveryFor(null); }
+  }
+}
 
 // ---- Dialogs ----
 
@@ -71,9 +166,12 @@ export async function pickFolder(defaultPath?: string): Promise<string | undefin
 function applyFresh(s: Snapshot) {
   const st = store();
   st.set({ selection: new Set(), mediaSelection: new Set(), playhead: 0, skim: undefined, probes: {}, clipboard: [] });
+  resetFolders();
   st.apply(s);
   // ffprobe details (rotation, codec) for the engine, in the background.
   void probeAll(s.project.assets);
+  // Linked folders brought up to date with the disk; one that's gone is offered to be located.
+  void syncFolders().then(() => offerToLocateFolders());
 }
 
 async function probeAll(assets: MediaAsset[]) {
@@ -92,14 +190,16 @@ async function probeAll(assets: MediaAsset[]) {
  * already on disk; untitled work asks before it's thrown away. Off: unsaved changes ask Save / Cancel /
  * Don't Save. Returns whether to go ahead.
  */
-export async function confirmDiscard(): Promise<boolean> {
+export async function confirmDiscard({ quitting = false }: { quitting?: boolean } = {}): Promise<boolean> {
   const s = store();
   if (s.autosave) {
-    if (!s.dirty || s.project.clips.length === 0) return true;
-    if (s.file) { await saveQuietly(); return true; }
+    // Quitting keeps untitled work in the recovery copy, which reopens next time.
+    if (quitting || !s.dirty || s.project.clips.length === 0) return true;
+    if (s.file) { await autosaveNow(); return true; }
     const r = await showAlert({
       title: "Discard unsaved changes?", text: `Your changes to “${s.title}” will be lost.`, buttons: ["Discard", "Cancel"],
     });
+    if (r === 0) await dropUnsaved();
     return r === 0;
   }
   await s.commitLive();
@@ -109,6 +209,7 @@ export async function confirmDiscard(): Promise<boolean> {
     buttons: ["Save", "Cancel", "Don't Save"], cancel: 1,
   });
   if (r === 0) return save();
+  if (r === 2) await dropUnsaved();
   return r === 2;
 }
 
@@ -117,6 +218,7 @@ export async function confirmDiscard(): Promise<boolean> {
 export async function newProject() {
   if (!(await confirmDiscard())) return;
   applyFresh(await api.newProject());
+  await discardRecovery();
   forgetSession();
 }
 
@@ -137,8 +239,15 @@ export async function openProjectPath(path: string, ask = true) {
   }
 }
 
+/** Writes the project file; the recovery copy goes once the work is safely in a file (Swift `write(to:)`). */
+async function writeProject(path?: string) {
+  const wasUntitled = !store().file;
+  store().apply(await api.saveProject(path));
+  if (wasUntitled || recoveryFor()) await discardRecovery();
+}
+
 async function saveQuietly() {
-  try { store().apply(await api.saveProject()); } catch { /* reported by the next explicit save */ }
+  try { await writeProject(); } catch { /* reported by the next explicit save */ }
 }
 
 /** Save: to the current file, or ask where (Save As) the first time. Returns whether it saved. */
@@ -146,7 +255,7 @@ export async function save(): Promise<boolean> {
   const s = store();
   if (!s.file) return saveAs();
   try {
-    s.apply(await api.saveProject());
+    await writeProject();
     noteRecent(s.file);
     return true;
   } catch (e) {
@@ -169,7 +278,7 @@ export async function saveAs(): Promise<boolean> {
   if (!path) return false;
   if (!isProjectFile(path)) path += ".room";
   try {
-    s.apply(await api.saveProject(path));
+    await writeProject(path);
     noteRecent(path);
     return true;
   } catch (e) {
@@ -185,6 +294,15 @@ export async function importDialog() {
     title: "Import Media", multiple: true,
     filters: [{ name: "Media", extensions: MEDIA_EXTENSIONS }, { name: "All Files", extensions: ["*"] }],
   });
+  if (paths.length) await importFiles(paths);
+}
+
+/**
+ * Import Folder…: a folder is linked — everything in it comes in, and Media keeps following it on disk.
+ * (Editroom's one panel takes files and folders; the system pickers here take one or the other.)
+ */
+export async function importFolderDialog() {
+  const paths = await pickOpen({ title: "Import Folder", multiple: true, directory: true, filters: [] });
   if (paths.length) await importFiles(paths);
 }
 
@@ -210,10 +328,8 @@ export async function importFiles(paths: string[], { reveal = true }: { reveal?:
   for (const [id, p] of r.probes) probes[id] = p;
   s.set({ probes });
   s.apply(r.snapshot);
-  if (reveal && r.added.length) {
-    store().set({ mediaSelection: new Set(r.added) });
-    requestReveal(r.added[0]);
-  }
+  // A hand import shows what came in: its folder opens, and the new items or folder are picked.
+  if (reveal) showImported(r);
   if (r.failed.length) {
     const names = r.failed.map(baseName);
     await showAlert({
@@ -222,6 +338,8 @@ export async function importFiles(paths: string[], { reveal = true }: { reveal?:
         ? `“${names[0]}” couldn't be imported. It may not be a video, audio or image file PromptEdit can read.`
         : `${names.length} files couldn't be imported:\n${names.slice(0, 8).join("\n")}${names.length > 8 ? "\n…" : ""}`,
     });
+  } else if (r.empty?.length) {
+    await showAlert({ title: "Import", text: `There's no media in “${r.empty[r.empty.length - 1]}”.` });
   }
   const firstVideo = r.snapshot.project.assets.find((a) => r.added.includes(a.id) && a.kind === "video");
   if (firstVideo) await offerMatch(firstVideo);
@@ -264,3 +382,6 @@ export const showInFolderLabel = isMac ? "Show in Finder" : "Show in Explorer";
 export async function showInFolder(path: string) {
   try { await call("reveal_path", { path }); } catch { /* not available in the browser */ }
 }
+
+// Development builds: the session functions for tests and the console (the dev server has no app launch).
+if (import.meta.env.DEV && typeof window !== "undefined") (window as unknown as { __promptedit_files: unknown }).__promptedit_files = { autosaveNow, restoreLastSession, confirmDiscard };

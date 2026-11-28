@@ -1096,6 +1096,13 @@ Port:
   ffmpeg's native `aac` encoder (`-b:a 256k|160k`) — different AAC encoder than Apple's, inaudible parity
   risk; WAV: write s24le in Rust (`hound`, MIT).
 - Mux: Rust `mp4` crate (MIT) or `ffmpeg -c copy -movflags +faststart`; set `colr` nclx 1/1/1.
+- *PromptEdit addition, ProRes MOV:* same frames; the compositor's (half-float) output is packed in a shader as v210 (10-bit
+  4:2:2, BT.709 limited range, chroma co-sited on even pixels with a [1 2 1]/4 filter) and sent as the raw body of
+  `export_frames` (Tauri raw invoke; dev server `/raw/export_frames`), straight into
+  `ffmpeg -f v210 -video_size WxH -framerate N/D -i pipe:0 -i mix.wav -c:v prores_videotoolbox -allow_sw 1 | prores_ks -vendor apl0
+  -profile:v proxy|lt|standard|hq -c:a pcm_s24le -color_primaries/trc/colorspace bt709 -movflags +write_colr -f mov`
+  (`export_video_start` starts it after the mix and loudness gain are known). VideoToolbox is used only if a test frame
+  encodes. *MP3:* the gained mix as 24-bit PCM → `libmp3lame -b:a 320k|192k` (CBR, ID3v2.3, Xing/LAME header).
 
 ---
 

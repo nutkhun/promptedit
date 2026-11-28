@@ -15,7 +15,7 @@ import { store, useStore } from "../../store";
 import { AlertLayer } from "../Alerts";
 import { MenuLayer } from "../menu";
 import { buildMenus, nativeSpec } from "./menuModel";
-import { confirmDiscard, handleOpen, importFiles, lastSession, openProjectPath, useRecents } from "./files";
+import { autosaveNow, confirmDiscard, handleOpen, importFiles, restoreLastSession, useRecents } from "./files";
 
 // Development builds: the store on `window` for tests and the console.
 if (import.meta.env.DEV) (window as unknown as { __promptedit: unknown }).__promptedit = { store };
@@ -142,18 +142,18 @@ function useLaunch() {
       const files = await call<string[]>("take_open_files").catch(() => [] as string[]);
       if (cancelled) return;
       if (files.length) await handleOpen(files);
-      else {
-        const last = lastSession();
-        if (last && (await call<boolean>("path_exists", { path: last }).catch(() => false))) await openProjectPath(last, false);
-      }
+      // The last project, or untitled work from the recovery copy (files.ts).
+      else await restoreLastSession();
     })();
     const opened = listen("open-files", async () => {
       const files = await call<string[]>("take_open_files").catch(() => [] as string[]);
       if (files.length) await handleOpen(files);
     });
     const w = getCurrentWindow();
+    // Closing the window quits: untitled work stays in the recovery copy and reopens next time.
     const closing = w.onCloseRequested(async (e) => {
-      if (!(await confirmDiscard())) e.preventDefault();
+      if (!(await confirmDiscard({ quitting: true }))) e.preventDefault();
+      else await autosaveNow();
     });
     const quit = () => void w.close();
     window.addEventListener("promptedit:quit", quit);
@@ -166,7 +166,10 @@ function useLaunch() {
   }, []);
 }
 
-/** Auto-save (on by default): a saved project writes itself ~2 s after the last change, never mid-drag. */
+/**
+ * Auto-save ~2 s after the last change, never mid-drag (files.ts `autosaveNow`): a saved project writes
+ * itself (Auto-save on), or its changes wait in the recovery copy (off); untitled work goes to the recovery copy.
+ */
 function useAutosave() {
   useEffect(() => {
     let timer: number | undefined;
@@ -176,11 +179,10 @@ function useAutosave() {
     const schedule = () => {
       window.clearTimeout(timer);
       const s = store();
-      if (!s.autosave || !s.dirty || !s.file) return;
+      if (!s.dirty) return;
       timer = window.setTimeout(async () => {
-        const now = store();
-        if (pointerDown || !now.autosave || !now.dirty || !now.file) return;
-        try { now.apply(await call("save_project", { path: null })); } catch { /* the next explicit save reports it */ }
+        if (pointerDown || !store().dirty) return;
+        try { await autosaveNow(); } catch { /* the next explicit save reports it */ }
       }, 2000);
     };
     const un = useStore.subscribe((s, prev) => {

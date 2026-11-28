@@ -30,6 +30,7 @@ async fn main() {
     let dev = Arc::new(Dev { state: AppState::default(), cache });
     let app = Router::new()
         .route("/invoke/{cmd}", post(invoke))
+        .route("/raw/{cmd}", post(invoke_raw))
         .route("/file", get(file))
         // Export streams encoded video through here; axum's default 2 MB limit is too small.
         .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
@@ -43,6 +44,20 @@ async fn main() {
 
 async fn invoke(State(dev): State<Arc<Dev>>, UrlPath(cmd): UrlPath<String>, Json(args): Json<serde_json::Value>) -> impl IntoResponse {
     let r = tokio::task::spawn_blocking(move || dispatch(&dev.state, &dev.cache, &cmd, args)).await.unwrap();
+    match r {
+        Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::String(e))).into_response(),
+    }
+}
+
+/// Commands whose body is raw bytes (export frames), as Tauri's raw-body invoke.
+async fn invoke_raw(UrlPath(cmd): UrlPath<String>, headers: axum::http::HeaderMap, body: axum::body::Bytes) -> impl IntoResponse {
+    let r = tokio::task::spawn_blocking(move || {
+        let header = |k: &str| headers.get(k).and_then(|v| v.to_str().ok()).map(str::to_string);
+        promptedit_lib::render::dispatch_raw(&cmd, &header, &body).unwrap_or_else(|| Err(format!("Unknown command {cmd}")))
+    })
+    .await
+    .unwrap();
     match r {
         Ok(v) => (StatusCode::OK, Json(v)).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::Value::String(e))).into_response(),

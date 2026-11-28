@@ -26,6 +26,10 @@ export interface ExportOptions {
   includeAudio?: boolean;
   /** How the picture fills a different frame shape: centre crop with an offset (-1…1). */
   reframe?: { x: number; y: number };
+  /** mov-prores: the ProRes profile (default "standard", ProRes 422). */
+  proresProfile?: "proxy" | "lt" | "standard" | "hq";
+  /** mp3: constant bit rate in kb/s (default 320). */
+  mp3Kbps?: 192 | 320;
 }
 
 export interface ExportProgress {
@@ -58,6 +62,8 @@ export interface Engine {
   levels?(): MeterLevels;
   /** The whole waveform (peaks, left, right, rms at 200/s). Cached. */
   waveformData?(asset: Id): Promise<Waveform | undefined>;
+  /** Whether video exported bigger than its own pixels is upscaled here (the export sheet's badge, §12). */
+  canUpscale?(): boolean;
 }
 
 /** Placeholder until the real engine lands: draws nothing, plays a clock. */

@@ -104,12 +104,14 @@ impl SceneTags {
     pub fn top(&self, n: usize) -> Vec<String> {
         self.tags.iter().take(n).map(|t| t.name.clone()).collect()
     }
+    /// The tags that match a word, as Editroom's `SceneTags.matching` (aliases, singulars, stems;
+    /// see `scenes::words`).
     pub fn matching(&self, word: &str) -> Vec<&Tag> {
-        let w = word.to_lowercase();
-        self.tags.iter().filter(|t| t.name.to_lowercase().split(|c: char| !c.is_alphanumeric()).any(|p| p == w || p.starts_with(&w))).collect()
+        crate::scenes::words::matching(self, word)
     }
+    /// Whether one of its tags is this word, as Editroom's `SceneTags.shows` ("door" finds a portal).
     pub fn shows(&self, word: &str) -> bool {
-        !self.matching(word).is_empty()
+        crate::scenes::words::shows(self, word, false)
     }
 }
 
@@ -152,7 +154,7 @@ pub fn scene_tags(a: Id) -> Option<SceneTags> {
 pub struct ExportRequest {
     pub id: String,
     pub file: String,
-    /// "video" (MP4) or "audio" (WAV).
+    /// "video" (MP4), "prores" (MOV), "audio" (WAV) or "mp3".
     pub format: String,
     pub shape: String,
     pub height: Option<i64>,
@@ -163,6 +165,9 @@ pub struct ExportRequest {
     pub range_only: bool,
     pub reframe_x: f64,
     pub reframe_y: f64,
+    /// For "prores": "proxy", "lt", "standard" (422) or "hq".
+    #[serde(default)]
+    pub prores_profile: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -8,8 +8,10 @@
 
 pub mod audio;
 mod b64;
+pub mod encoders;
 pub mod export;
 pub mod loudness;
+pub mod prores;
 pub mod waveform;
 
 use serde::Serialize;
@@ -119,9 +121,32 @@ pub fn dispatch(cache_dir: &Path, cmd: &str, args: &Value) -> Option<Result<Valu
             export::cancel(u("job")?);
             Ok(Value::Null)
         })(),
+        "export_encoders" => ok(encoders::encoders()),
+        "export_video_start" => (|| {
+            let opts: export::VideoStart =
+                serde_json::from_value(args.get("options").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
+            export::video_start(u("job")?, opts)?;
+            Ok(Value::Null)
+        })(),
         _ => return None,
     };
     Some(r)
+}
+
+/// The header that names the export job of an `export_frames` call (its body is the frames).
+pub const JOB_HEADER: &str = "x-export-job";
+
+/// Commands whose body is raw bytes rather than JSON arguments (the dev server's `/raw/<cmd>`);
+/// `header` reads the request's headers. None: not one of ours.
+pub fn dispatch_raw(cmd: &str, header: &dyn Fn(&str) -> Option<String>, body: &[u8]) -> Option<Result<Value, String>> {
+    match cmd {
+        "export_frames" => Some((|| {
+            let job = header(JOB_HEADER).and_then(|v| v.trim().parse().ok()).ok_or("Missing export job")?;
+            export::append_frames(job, body)?;
+            Ok(Value::Null)
+        })()),
+        _ => None,
+    }
 }
 
 // ---- Tauri commands (the same functions; blocking work runs off the main thread) ----
@@ -173,4 +198,35 @@ pub async fn export_finish(job: u64, options: export::FinishOptions) -> Result<S
 #[tauri::command]
 pub fn export_cancel(job: u64) {
     export::cancel(job)
+}
+
+/// Which ProRes encoder there is (if any) and whether MP3 export works.
+#[tauri::command]
+pub async fn export_encoders() -> Result<encoders::Encoders, String> {
+    blocking(|| Ok(encoders::encoders().clone())).await
+}
+
+/// Starts encoding raw frames (ProRes) once the sound is mixed; see `export::video_start`.
+#[tauri::command]
+pub async fn export_video_start(job: u64, options: export::VideoStart) -> Result<(), String> {
+    blocking(move || export::video_start(job, options)).await
+}
+
+/// Rendered frames, as the raw request body (no JSON or base64: ~5.5 MB a frame at 1080p); the job
+/// is in the `x-export-job` header.
+#[tauri::command]
+pub async fn export_frames(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let job: u64 = request
+        .headers()
+        .get(JOB_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse().ok())
+        .ok_or("Missing export job")?;
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => b.clone(),
+        // Where the webview can't use Tauri's custom-protocol IPC, bytes arrive as a JSON array.
+        tauri::ipc::InvokeBody::Json(Value::Array(a)) => a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect(),
+        _ => return Err("Frames arrive as raw bytes.".into()),
+    };
+    blocking(move || export::append_frames(job, &bytes)).await
 }

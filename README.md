@@ -11,8 +11,8 @@ Fast video editing for **Mac and PC**, with AI that cuts for you. A cross-platfo
 
 ## Download
 
-Installers are built by GitHub Actions for every push to `main`
-(Actions › Build › artifacts) and attached to a draft release for `v*` tags:
+Releases are on [GitHub Releases](https://github.com/nutkhun/promptedit/releases); installers for
+every push to `main` are in Actions › Build › artifacts:
 
 - **macOS** (Apple silicon, macOS 14+): `PromptEdit_<version>_aarch64.dmg`
 - **Windows** (10/11, x64): `PromptEdit_<version>_x64-setup.exe` or `.msi`
@@ -103,9 +103,67 @@ The workflow signs automatically when these repository secrets are set:
 
 - macOS: `APPLE_CERTIFICATE` (base64 .p12 Developer ID Application), `APPLE_CERTIFICATE_PASSWORD`,
   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`.
-- Updates: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-  (`pnpm tauri signer generate`).
+- Updates: see [Updates](#updates).
 - Windows code signing: see the [Tauri guide](https://tauri.app/distribute/sign/windows/).
+
+## Updates
+
+PromptEdit checks for updates once a day (and from **Check for Updates…** in the PromptEdit menu on
+macOS, the Help menu on Windows, or Settings › Updates), shows what's new, then downloads, installs
+and relaunches. It reads
+[`latest.json`](https://github.com/nutkhun/promptedit/releases/latest/download/latest.json) from the
+latest published release, and installs only updates signed with the project's update key.
+
+The key pair isn't in the repository. Until it's set up, builds work as before and say "This build
+doesn't check for updates." To set it up, once, on your own Mac:
+
+```bash
+mkdir -p ~/.tauri && pnpm tauri signer generate -w ~/.tauri/promptedit.key
+```
+
+It asks for a password (keep it; an empty one works but isn't recommended) and writes
+`~/.tauri/promptedit.key` (private) and `~/.tauri/promptedit.key.pub` (public). Back the private key
+up somewhere safe: without it no update can ever be published to installed copies again. Then, in the
+repository's **Settings › Secrets and variables › Actions**:
+
+- **Secrets** tab › New repository secret: `TAURI_SIGNING_PRIVATE_KEY` = the contents of
+  `~/.tauri/promptedit.key` (`pbcopy < ~/.tauri/promptedit.key`), and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = its password.
+- **Variables** tab › New repository variable: `TAURI_UPDATER_PUBKEY` = the contents of
+  `~/.tauri/promptedit.key.pub` (`pbcopy < ~/.tauri/promptedit.key.pub`), one line.
+
+CI then puts the public key into the app (`scripts/updater-config.mjs`), signs the updater bundles,
+and checks every signature against the public key before it publishes a release. Copies installed
+before the key was set up don't check for updates; install one release by hand to get updates from
+then on.
+
+## Releasing
+
+1. Set the version everywhere (package.json, src-tauri/tauri.conf.json, Cargo.toml, Cargo.lock):
+
+   ```bash
+   node scripts/version.mjs 0.2.0
+   ```
+
+   A pre-release needs a number after the dash (`0.2.0-1`, not `0.2.0-beta`): the Windows MSI
+   installer allows nothing else.
+
+2. Commit, then tag with what's new as the message, one change per line. The message becomes the
+   release notes and the list in the app's update alert:
+
+   ```bash
+   git commit -am "PromptEdit 0.2.0"
+   git tag -a v0.2.0 -m "Export is up to twice as fast
+   Captions can be styled per clip"
+   git push origin main v0.2.0
+   ```
+
+3. The Build workflow checks the tag matches the version, builds and signs macOS and Windows, and
+   uploads them to a draft release. When both are done, its **Publish release** job writes
+   `latest.json`, verifies it and publishes the release as the latest one; installed copies see it
+   within a day. A pre-release tag (`v0.2.0-1`) is published as a pre-release, which the updater
+   doesn't offer. If a build fails, the release stays a draft: fix it and re-run the workflow, or
+   delete the draft and the tag and tag again.
 
 ## License
 

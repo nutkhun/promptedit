@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod source_color;
+pub use source_color::SourceColor;
+
 /// Where a bundled tool lives: next to the app's executable in a build, in
 /// `src-tauri/binaries` during development, or `PROMPTEDIT_<NAME>` to override.
 pub fn tool(name: &str) -> PathBuf {
@@ -66,6 +69,14 @@ pub struct Probe {
     /// Colour primaries / transfer, for HDR tone mapping (e.g. "bt2020", "arib-std-b67").
     pub color_primaries: Option<String>,
     pub color_transfer: Option<String>,
+    /// The Y′CbCr matrix (ffprobe `color_space`, e.g. "bt2020nc") and range ("tv" / "pc").
+    #[serde(default)]
+    pub color_matrix: Option<String>,
+    #[serde(default)]
+    pub color_range: Option<String>,
+    /// HDR / Apple Log, for the conversion to Rec.709 (spec 02-engine §3.7).
+    #[serde(default)]
+    pub source_color: SourceColor,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +108,8 @@ struct FfStream {
     channels: Option<i64>,
     color_primaries: Option<String>,
     color_transfer: Option<String>,
+    color_space: Option<String>,
+    color_range: Option<String>,
     disposition: Option<serde_json::Value>,
     side_data_list: Option<Vec<serde_json::Value>>,
     tags: Option<serde_json::Value>,
@@ -169,6 +182,9 @@ pub fn probe(path: &Path) -> Result<Probe, String> {
         audio_channels: audio.and_then(|a| a.channels),
         color_primaries: None,
         color_transfer: None,
+        color_matrix: None,
+        color_range: None,
+        source_color: SourceColor::Standard,
     };
 
     if let Some(v) = video {
@@ -186,6 +202,11 @@ pub fn probe(path: &Path) -> Result<Probe, String> {
         p.codec_string = codec_string(v);
         p.color_primaries = v.color_primaries.clone();
         p.color_transfer = v.color_transfer.clone();
+        p.color_matrix = v.color_space.clone();
+        p.color_range = v.color_range.clone();
+        if kind == MediaKind::Video {
+            p.source_color = source_color::detect(path, p.color_transfer.as_deref());
+        }
     }
 
     p.duration = match kind {
@@ -433,6 +454,64 @@ mod tests {
         let wav = dir.join("c.wav");
         assert!(command("ffmpeg").args(["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=duration=1"]).arg(&wav).status().unwrap().success());
         assert_eq!(probe(&wav).unwrap().kind, MediaKind::Audio);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Rebuilds a box list, appending `extra` to the first video sample entry inside `stsd`
+    /// (the moov is after the mdat in ffmpeg's .mov, so no chunk offsets move).
+    fn with_log_atom(data: &[u8], extra: &[u8], path: &[&[u8; 4]]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at + 8 <= data.len() {
+            let size = u32::from_be_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            let kind: [u8; 4] = data[at + 4..at + 8].try_into().unwrap();
+            let payload = &data[at + 8..at + size];
+            let body = if path.first() == Some(&&kind) && path.len() > 1 {
+                with_log_atom(payload, extra, &path[1..])
+            } else if path.first() == Some(&&kind) && &kind == b"stsd" {
+                // version/flags + count, then the first entry gets the atom.
+                let entry_size = u32::from_be_bytes(payload[8..12].try_into().unwrap()) as usize;
+                let mut entry = payload[8..8 + entry_size].to_vec();
+                entry.extend_from_slice(extra);
+                let n = entry.len() as u32;
+                entry[..4].copy_from_slice(&n.to_be_bytes());
+                [&payload[..8], &entry[..], &payload[8 + entry_size..]].concat()
+            } else {
+                payload.to_vec()
+            };
+            out.extend_from_slice(&((body.len() + 8) as u32).to_be_bytes());
+            out.extend_from_slice(&kind);
+            out.extend_from_slice(&body);
+            at += size;
+        }
+        out
+    }
+
+    #[test]
+    fn finds_hdr_and_apple_log() {
+        let dir = std::env::temp_dir().join(format!("promptedit-color-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tagged = |trc: &'static str| {
+            ["-c:v", "mpeg4", "-pix_fmt", "yuv420p", "-color_primaries", "bt2020", "-colorspace", "bt2020nc", "-color_trc", trc, "-an"]
+        };
+        let hlg = probe(&make_clip(&dir, "hlg.mov", &tagged("arib-std-b67"))).unwrap();
+        assert_eq!(hlg.source_color, SourceColor::Hlg);
+        assert_eq!(hlg.color_matrix.as_deref(), Some("bt2020nc"));
+        let pq = probe(&make_clip(&dir, "pq.mov", &tagged("smpte2084"))).unwrap();
+        assert_eq!(pq.source_color, SourceColor::Pq);
+        let plain = make_clip(&dir, "log.mov", &tagged("bt709"));
+        assert_eq!(probe(&plain).unwrap().source_color, SourceColor::Standard);
+
+        // The same file marked as Apple Log in its sample description, as an iPhone writes it.
+        let mut atom = 36u32.to_be_bytes().to_vec();
+        atom.extend_from_slice(b"alogcom.apple.rec2020.apple-log\0");
+        let bytes = std::fs::read(&plain).unwrap();
+        let marked = with_log_atom(&bytes, &atom, &[b"moov", b"trak", b"mdia", b"minf", b"stbl", b"stsd"]);
+        assert_ne!(marked.len(), bytes.len(), "atom added");
+        std::fs::write(&plain, marked).unwrap();
+        let log = probe(&plain).unwrap();
+        assert_eq!(log.source_color, SourceColor::AppleLog);
+        assert!((log.duration - 2.0).abs() < 0.1, "still a readable file");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
