@@ -1,13 +1,17 @@
 //! PromptEdit's app shell: the open document, file I/O and media, exposed to the UI as commands.
 
 pub mod agents;
+pub mod folders;
 pub mod magic;
 pub mod mcp;
 pub mod media;
 pub mod menu;
+pub mod recovery;
 pub mod shell;
 pub mod render;
+pub mod scenes;
 pub mod transcribe;
+pub mod updates;
 
 use promptedit_core::edit::{Edit, Outcome};
 use promptedit_core::history::Document;
@@ -88,6 +92,8 @@ pub fn open_project_at(state: &AppState, path: PathBuf) -> Result<Snapshot, Stri
     *state.doc.lock().unwrap() = Document::new(doc.project);
     *state.file.lock().unwrap() = Some(path);
     transcribe::auto_queue(&assets);
+    // What's in their pictures too, if the picture model is here.
+    scenes::auto_queue(&assets);
     Ok(snapshot(state, None))
 }
 
@@ -160,6 +166,12 @@ pub struct ImportResult {
     pub added: Vec<Id>,
     pub probes: Vec<(Id, media::Probe)>,
     pub failed: Vec<String>,
+    /// Linked folders this import started following (src/folders.rs).
+    pub linked: Vec<String>,
+    /// A folder brought in that was already inside a linked one: the Media panel opens it.
+    pub opened: Option<String>,
+    /// Names of folders brought in that had no media in them.
+    pub empty: Vec<String>,
 }
 
 /// Brings files into the library (not undoable, as in Editroom). Files the engine can't read
@@ -175,7 +187,16 @@ async fn import_media(app: tauri::AppHandle, paths: Vec<String>) -> Result<Impor
 
 /// Brings files into the library (not undoable, as in Editroom). Files the engine can't read
 /// directly get a playable copy in `cache_dir/Converted`.
+/// A folder links it: everything in it comes in, and Media keeps following it (src/folders.rs).
 pub fn import_paths(state: &AppState, cache_dir: &Path, paths: Vec<String>) -> ImportResult {
+    let plan = folders::plan_import(state, paths);
+    let mut r = import_files(state, cache_dir, plan.files.clone());
+    folders::finish_import(state, &plan, &mut r);
+    r
+}
+
+/// Probes files and adds them to the library (the same file twice is one item).
+pub fn import_files(state: &AppState, cache_dir: &Path, paths: Vec<String>) -> ImportResult {
     let converted = cache_dir.join("Converted");
     let mut ok: Vec<(MediaAsset, media::Probe)> = vec![];
     let mut failed = vec![];
@@ -220,7 +241,9 @@ pub fn import_paths(state: &AppState, cache_dir: &Path, paths: Vec<String>) -> I
     }
     // Heard in the background if the speech model is already here, so search finds what's said.
     transcribe::auto_queue(&new_assets);
-    ImportResult { snapshot: snapshot(state, None), added, probes, failed }
+    // And what's in the picture, for search by what a clip shows.
+    scenes::auto_queue(&new_assets);
+    ImportResult { snapshot: snapshot(state, None), added, probes, failed, linked: vec![], opened: None, empty: vec![] }
 }
 
 /// Re-probes one library item (for the UI's codec check).
@@ -266,6 +289,7 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
     let ok = |v: Snapshot| to_value(v).map_err(|e| e.to_string());
     // Transcription runs from the first command, so imports are heard in the background too.
     transcribe::ensure(cache_dir);
+    scenes::ensure(cache_dir);
     match cmd {
         "get_project" => ok(snapshot(state, None)),
         "new_project" => {
@@ -322,6 +346,9 @@ pub fn dispatch(state: &AppState, cache_dir: &Path, cmd: &str, args: serde_json:
             .or_else(|| shell::dispatch(state, cache_dir, other, &args))
             .or_else(|| mcp::commands::dispatch(state, cache_dir, other, &args))
             .or_else(|| transcribe::dispatch(state, cache_dir, other, &args))
+            .or_else(|| scenes::dispatch(state, cache_dir, other, &args))
+            .or_else(|| folders::dispatch(state, cache_dir, other, &args))
+            .or_else(|| recovery::dispatch(state, cache_dir, other, &args))
             .unwrap_or_else(|| Err(format!("Unknown command {other}"))),
     }
 }
@@ -331,6 +358,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Relaunching after an update installs (src/ui/updates).
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .setup(|app| {
             // Speech to text (src/transcribe): the queue's thread, and the MCP transcript provider
@@ -338,8 +367,17 @@ pub fn run() {
             if let Err(e) = transcribe::start_app(app.handle()) {
                 eprintln!("Transcription didn't start: {e}");
             }
+            // What's in the picture (src/scenes): its queue's thread, and the MCP scene tag provider.
+            if let Err(e) = scenes::start_app(app.handle()) {
+                eprintln!("Picture search didn't start: {e}");
+            }
             // The MCP server for AI apps and Magic (src/mcp), then the shell.
             mcp::commands::start_app(app.handle().clone());
+            // Software updates, in builds that carry the update signing key (src/updates.rs).
+            updates::setup(app);
+            // Linked folders tell the window when they change; the recovery copy's folder.
+            folders::start_app(app.handle());
+            recovery::start_app(app.handle());
             shell::setup(app)
         })
         .on_menu_event(menu::on_menu_event)
@@ -363,6 +401,9 @@ pub fn run() {
             render::export_loudness,
             render::export_finish,
             render::export_cancel,
+            render::export_encoders,
+            render::export_video_start,
+            render::export_frames,
             menu::set_app_menu,
             shell::take_open_files,
             shell::path_exists,
@@ -397,8 +438,32 @@ pub fn run() {
             transcribe::commands::transcription_settings_set,
             transcribe::commands::transcription_model_download,
             transcribe::commands::transcription_model_state,
+            scenes::commands::scene_tags_get,
+            scenes::commands::scene_tags_all,
+            scenes::commands::scene_tags_queue,
+            scenes::commands::scene_tags_state,
+            scenes::commands::scene_settings_get,
+            scenes::commands::scene_settings_set,
+            scenes::commands::scene_model_download,
+            scenes::commands::scene_model_state,
+            scenes::commands::scene_aliases,
+            updates::updates_enabled,
+            folders::sync_folders,
+            folders::folder_changes,
+            folders::locate_media_folder,
+            folders::reload_media_folder,
+            recovery::recovery_save,
+            recovery::recovery_discard,
+            recovery::recovery_exists,
+            recovery::recovery_open,
         ])
         .build(tauri::generate_context!())
         .expect("error while running PromptEdit")
-        .run(shell::on_run_event);
+        .run(|app, event| {
+            // Quitting mid-export: stop the ProRes encoder instead of letting it finish a partial file.
+            if let tauri::RunEvent::Exit = event {
+                render::export::cancel_all();
+            }
+            shell::on_run_event(app, event)
+        });
 }

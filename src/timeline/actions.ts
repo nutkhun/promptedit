@@ -8,6 +8,7 @@ import { asset, clipEnd, linked, unlocked } from "../timing";
 import { WAVE_RATE, waveform } from "./media";
 import { useCaptions } from "./captions";
 import * as captions from "../captions/actions";
+import { hasMediaPicks, removePickedMedia } from "../ui/shell/media";
 
 const sel = () => [...store().selection];
 
@@ -29,7 +30,8 @@ export const splitAtPlayhead = () => store().edit({ op: "splitAtPlayhead", selec
 /** The toolbar's Delete: Media picks if there are any, else the selected clips. */
 export function deleteSelected(ripple = false) {
   const s = store();
-  if (s.mediaSelection.size) return s.edit({ op: "removeAssets", ids: [...s.mediaSelection] });
+  // Media's picks (items and folders) first, asking when clips use them (src/ui/shell/media.ts).
+  if (hasMediaPicks()) return removePickedMedia();
   if (!s.selection.size && useCaptions.getState().selection.size) return captions.deleteSelectedCaptions();
   if (!s.selection.size) return;
   return s.edit({ op: "delete", ids: sel(), ripple });

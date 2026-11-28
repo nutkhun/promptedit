@@ -458,6 +458,9 @@ Validation: height 144…4320; loudness −40…−5; range_only needs in/out; w
 `"<base> 2.ext"`, `"<base> 3.ext"` … to avoid existing/queued files. Folder: `project.exportDir` if it exists, else project folder,
 else `~/Movies`. Queues `model.exports.add(...)`; returns `{file, size: "WxH"|"audio", status:"started"}`; with `wait`, polls every
 0.5 s up to 240 s → `done` / `cancelled` / error `"The export failed: <why>"` / `"still exporting; export_status says when it's done"`.
+PromptEdit addition (not in Editroom): `format` also takes `"prores"` (a ProRes `.mov`) and `"mp3"` (`quality` high = 320 kb/s,
+web = 192), and `"prores_profile": {"enum": ["proxy","lt","standard","hq"]}` picks the ProRes (default standard, ProRes 422); mp3
+needs audio clips like wav.
 
 #### export_status — "Export status" (readOnly)
 Description: `Exports started from Editroom (by anyone): their files and whether they're waiting, running, done or failed.`

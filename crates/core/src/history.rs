@@ -89,6 +89,11 @@ impl Document {
         true
     }
 
+    /// Whether a continuous change (drag, slider) is under way and not yet committed.
+    pub fn is_live(&self) -> bool {
+        self.live_snapshot.is_some()
+    }
+
     /// Throws away an uncommitted live change.
     pub fn discard_live(&mut self) {
         if let Some(s) = self.live_snapshot.take() {

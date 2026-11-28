@@ -2,6 +2,7 @@
 //! undo and timecode. No UI and no media I/O, so it is tested on any OS.
 
 pub mod edit;
+pub mod folders;
 pub mod history;
 pub mod id;
 pub mod model;

@@ -103,3 +103,45 @@
   display: flex; align-items: center; justify-content: center; gap: 6px;
   color: var(--on-picture); font-size: 12px; font-weight: 600;
 }
+
+/* Linked folders (§1.3): folder tiles and rows, the title inside a folder, the missing-folder banner. */
+.pe-folder-picture { position: absolute; inset: 0; border-radius: 6px; background: rgba(var(--ink-rgb), 0.02); overflow: hidden; }
+.pe-folder-picture.compact { border-radius: 5px; }
+.pe-folder-picture .symbol {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); opacity: 0.8;
+}
+.pe-folder-picture .missing {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45); color: #F5C518;
+}
+.pe-folder-name { display: flex; align-items: baseline; gap: 6px; padding: 0 2px; min-width: 0; }
+.pe-folder-name .pe-tile-name { flex: 1; min-width: 0; padding: 0; }
+.pe-folder-name .count { flex: none; font-size: 10px; color: var(--text-faint); }
+
+.pe-media-title { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 0 1 auto; margin-left: -6px; }
+.pe-media-title .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pe-media-back {
+  flex: none; width: 20px; height: 20px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-dim); transition: background var(--ease), color var(--ease);
+}
+.pe-media-back:hover { background: var(--hover); color: var(--text); }
+
+.pe-missing-folder {
+  flex: none; display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; border-radius: 7px; background: var(--raised);
+}
+.pe-missing-folder .say { flex: 1; min-width: 0; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-missing-folder .locate {
+  flex: none; padding: 3px 8px; border-radius: 999px;
+  background: var(--text); color: var(--on-text); font-size: 11px; font-weight: 500;
+}
+
+/* A search result's folder, cut at the start so the end of the path shows. */
+.pe-place {
+  font-size: 10.5px; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left;
+}
+.pe-place bdi { direction: ltr; unicode-bidi: isolate; }
+.pe-tile > .pe-place { padding: 0 2px; margin-top: -3px; }

@@ -13,7 +13,8 @@ import { queueExport, type ExportJob } from "./queue";
 interface AgentExportRequest {
   id: string;
   file: string;
-  format: "video" | "audio";
+  /** video: MP4; prores: MOV; audio: WAV; mp3. */
+  format: "video" | "prores" | "audio" | "mp3";
   shape: ExportSettings["shape"];
   height?: number | null;
   codec: "h264" | "hevc";
@@ -23,14 +24,20 @@ interface AgentExportRequest {
   rangeOnly: boolean;
   reframeX: number;
   reframeY: number;
+  proresProfile?: ExportSettings["prores"] | null;
 }
+
+const FORMAT: Record<AgentExportRequest["format"], ExportSettings["format"]> = { video: "mp4", prores: "mov", audio: "wav", mp3: "mp3" };
 
 export function settingsFor(r: AgentExportRequest): ExportSettings {
   return {
-    format: r.format === "audio" ? "wav" : "mp4",
+    format: FORMAT[r.format] ?? "mp4",
     height: r.height ?? undefined,
     codec: r.codec,
     quality: r.quality,
+    prores: r.proresProfile ?? "standard",
+    // The tool's quality picks the MP3 bit rate.
+    mp3Kbps: r.quality === "web" ? 192 : 320,
     includeAudio: r.includeAudio,
     loudness: r.loudness ?? undefined,
     shape: r.shape,

@@ -143,7 +143,13 @@ pub enum Edit {
     SetSequence { width: i64, height: i64 },
     SetFps { fps: f64 },
     MatchSequence { asset: Id },
-    RemoveAssets { ids: Vec<Id> },
+    /// Takes items out of Media with the clips that use them. `folders`: Media panel folders (linked
+    /// folders or folders inside them, by path) going too, with everything in them.
+    RemoveAssets {
+        ids: Vec<Id>,
+        #[serde(default)]
+        folders: Vec<String>,
+    },
     AddMarker { playhead: f64 },
     UpdateMarker { marker: Marker },
     RemoveMarker { id: Id },
@@ -232,19 +238,22 @@ impl Edit {
     /// Applies the edit as one undo step.
     pub fn apply(&self, doc: &mut Document) -> Outcome {
         let mut out = Outcome::default();
-        out.changed = doc.mutate(|p| run(self, p, &mut out));
+        // Linked folders still being imported are kept even while empty.
+        let importing = doc.importing_folders.clone();
+        out.changed = doc.mutate(|p| run(self, p, &mut out, &importing));
         out
     }
 
     /// Applies the edit as part of a continuous change (commit with `Document::commit_live`).
     pub fn apply_live(&self, doc: &mut Document) -> Outcome {
         let mut out = Outcome::default();
-        out.changed = doc.live(|p| run(self, p, &mut out));
+        let importing = doc.importing_folders.clone();
+        out.changed = doc.live(|p| run(self, p, &mut out, &importing));
         out
     }
 }
 
-fn run(edit: &Edit, p: &mut Project, out: &mut Outcome) {
+fn run(edit: &Edit, p: &mut Project, out: &mut Outcome, importing: &Ids) {
     let fps = p.fps;
     match edit {
         Edit::Add { payloads, start, video_track, audio_track, snap } => {
@@ -539,18 +548,10 @@ fn run(edit: &Edit, p: &mut Project, out: &mut Outcome) {
                 p.settings_locked = true;
             }
         }
-        Edit::RemoveAssets { ids } => {
-            let ids = set(ids);
-            let mut hidden = p.hidden_media.clone().unwrap_or_default();
-            for a in p.assets.iter().filter(|a| ids.contains(&a.id)) {
-                if p.folders.iter().flatten().any(|f| crate::paths::folder_contains(&f.path, &a.path)) {
-                    hidden.push(a.path.clone());
-                }
-            }
-            p.hidden_media = (!hidden.is_empty()).then_some(hidden);
-            p.assets.retain(|a| !ids.contains(&a.id));
-            p.clips.retain(|c| c.asset_id.is_none_or(|a| !ids.contains(&a)));
-            p.prune_folders(&Default::default());
+        Edit::RemoveAssets { ids, folders } => {
+            // Files in a linked folder are left out of it from now on (hiddenMedia), so the next look at
+            // the folder doesn't bring them back (crate::folders).
+            p.remove_media(&set(ids), folders, importing);
             out.selection = Some(vec![]);
         }
         Edit::AddMarker { playhead } => {

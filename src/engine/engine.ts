@@ -15,6 +15,7 @@ import { Exporter } from "./export/exporter";
 import { Compositor, type Frame } from "./gl/compositor";
 import { fitRect, frameSeconds, previewSize } from "./geometry";
 import { GradeBaker } from "./grade";
+import { upscalerAvailable } from "./gl/upscale";
 import type { Engine, ExportOptions, ExportProgress } from "./index";
 import { layersAt, type Layer } from "./layers";
 import { resolveLayers } from "./scene";
@@ -326,6 +327,10 @@ export class MediaEngine implements Engine {
 
   cancelExport() {
     this.exporter?.cancel();
+  }
+
+  canUpscale(): boolean {
+    return upscalerAvailable();
   }
 
   /** Resolves once no draw is in progress (for tests: the viewer shows the latest request). */

@@ -1,11 +1,12 @@
 // Settings › General (docs/spec/04-ui.md §1.8): theme (each a miniature of the editor in its colours),
-// Media layout, how times show, the speech model and language for captions, and Auto-save.
+// Media layout, how times show, the speech model and language for captions, picture search, and Auto-save.
 
 import type { ReactNode } from "react";
 import { primaryKey } from "../../commands";
 import { useStore, type Theme } from "../../store";
 import { Segmented, Switch } from "../buttons";
 import { CaptionSettingsRows } from "../../captions/CaptionSettings";
+import { PictureSearchRows } from "./PictureSearchSettings";
 
 /** The few colours a theme miniature needs (Theme.swift palettes). */
 interface Mini { bg: string; panel: string; lane: string; video: string; audio: string; clipStroke: string; text: string; textDim: string; ink: string; accent: string }
@@ -117,6 +118,9 @@ export function GeneralSettings() {
       </Section>
       <Section title="Captions">
         <CaptionSettingsRows Row={SettingRow} />
+      </Section>
+      <Section title="Picture search">
+        <PictureSearchRows Row={SettingRow} />
       </Section>
       <Section title="Saving">
         <SettingRow title="Auto-save" detail={autosave ? "Saved projects save themselves as you edit." : `Projects change only when you save (${primaryKey("s")}).`}>

@@ -1,11 +1,15 @@
 // Export settings and their maths (Editroom's `ExportSettings`, Engine/Exporter.swift): output size per
 // shape and resolution, whether the shape crops, bitrate and size estimates, and the engine options.
+// ProRes (MOV) and MP3 are PromptEdit's own (Editroom had MP4 and WAV only): the usual ProRes 422
+// family, and MP3 at a constant 320 or 192 kb/s.
 
 import type { ExportOptions } from "../../engine";
 import type { Project } from "../../model";
 import { playRange, projectDuration } from "../../timing";
 
-export type Format = "mp4" | "wav";
+export type Format = "mp4" | "mov" | "wav" | "mp3";
+export type ProresProfile = NonNullable<ExportOptions["proresProfile"]>;
+export type Mp3Kbps = NonNullable<ExportOptions["mp3Kbps"]>;
 export type Codec = "h264" | "hevc";
 export type Quality = "high" | "web";
 export type Shape = "original" | "vertical" | "square" | "portrait";
@@ -16,6 +20,10 @@ export interface ExportSettings {
   height?: number;
   codec: Codec;
   quality: Quality;
+  /** MOV: which ProRes. */
+  prores: ProresProfile;
+  /** MP3: constant bit rate. */
+  mp3Kbps: Mp3Kbps;
   includeAudio: boolean;
   /** Target loudness in LUFS; undefined leaves levels as they are. */
   loudness?: number;
@@ -26,9 +34,28 @@ export interface ExportSettings {
 }
 
 export const defaultSettings = (p: Project): ExportSettings => ({
-  format: "mp4", codec: "h264", quality: "high", includeAudio: true, shape: "original",
+  format: "mp4", codec: "h264", quality: "high", prores: "standard", mp3Kbps: 320, includeAudio: true, shape: "original",
   reframe: { x: 0.5, y: 0.5 }, rangeOnly: playRange(p) !== undefined,
 });
+
+/** Formats with a picture. */
+export const isVideo = (f: Format) => f === "mp4" || f === "mov";
+
+export const FORMATS: [Format, string][] = [["mp4", "MP4 Video"], ["mov", "ProRes Video"], ["wav", "WAV Audio"], ["mp3", "MP3 Audio"]];
+export const formatLabel = (f: Format) => FORMATS.find(([x]) => x === f)![1];
+
+export const PRORES: [ProresProfile, string][] = [
+  ["proxy", "ProRes 422 Proxy"], ["lt", "ProRes 422 LT"], ["standard", "ProRes 422"], ["hq", "ProRes 422 HQ"],
+];
+export const proresLabel = (p: ProresProfile) => PRORES.find(([x]) => x === p)![1];
+export const MP3_RATES: Mp3Kbps[] = [320, 192];
+
+/** Apple's target ProRes data rates at 1920 × 1080, 29.97 fps (Mb/s); they scale with pixels and frames. */
+const PRORES_MBPS: Record<ProresProfile, number> = { proxy: 45, lt: 102, standard: 147, hq: 220 };
+
+export function proresBitrate(profile: ProresProfile, size: { width: number; height: number }, fps: number): number {
+  return Math.round(PRORES_MBPS[profile] * 1e6 * ((size.width * size.height) / (1920 * 1080)) * (fps / 29.97));
+}
 
 export const SHAPES: [Shape, string][] = [
   ["original", "Sequence shape"], ["vertical", "Vertical 9:16"], ["square", "Square 1:1"], ["portrait", "Portrait 4:5"],
@@ -88,20 +115,31 @@ export function outputDuration(s: ExportSettings, p: Project): number {
   return r ? r[1] - r[0] : projectDuration(p);
 }
 
+/** Bits per second of the file. */
+function fileBitrate(s: ExportSettings, p: Project): number {
+  switch (s.format) {
+    case "mp4": return videoBitrate(s, renderSize(s, p), p.fps) + (s.includeAudio ? 256_000 : 0);
+    // The sound is 24-bit PCM beside the picture.
+    case "mov": return proresBitrate(s.prores, renderSize(s, p), p.fps) + (s.includeAudio ? 48000 * 24 * 2 : 0);
+    case "wav": return 48000 * 24 * 2;
+    case "mp3": return s.mp3Kbps * 1000;
+  }
+}
+
 export function estimatedSize(s: ExportSettings, p: Project): string {
-  const bits = s.format === "mp4"
-    ? videoBitrate(s, renderSize(s, p), p.fps) + (s.includeAudio ? 256_000 : 0)
-    : 48000 * 24 * 2;
+  const bits = fileBitrate(s, p);
   const mb = (bits * outputDuration(s, p)) / 8 / 1_000_000;
   return mb >= 1000 ? `~${(mb / 1000).toFixed(1)} GB` : `~${Math.round(Math.max(1, mb))} MB`;
 }
 
-export const extension = (s: ExportSettings) => (s.format === "mp4" ? "mp4" : "wav");
+export const extension = (s: ExportSettings): string => s.format;
 
-/** "H.264 · 1080p" / "WAV": the export list's detail. */
+/** "H.264 · 1080p" / "ProRes 422 HQ · 1080p" / "WAV" / "MP3 · 320 kbps": the export list's detail. */
 export function kindLabel(s: ExportSettings, p: Project): string {
   if (s.format === "wav") return "WAV";
-  return `${s.codec === "hevc" ? "HEVC" : "H.264"} · ${renderSize(s, p).height}p`;
+  if (s.format === "mp3") return `MP3 · ${s.mp3Kbps} kbps`;
+  const codec = s.format === "mov" ? proresLabel(s.prores) : s.codec === "hevc" ? "HEVC" : "H.264";
+  return `${codec} · ${renderSize(s, p).height}p`;
 }
 
 /** The part of the picture a crop keeps, as fractions of the picture's width and height. */
@@ -123,16 +161,19 @@ export function reframeOffset(s: ExportSettings, p: Project): { x: number; y: nu
 
 export function engineOptions(s: ExportSettings, p: Project, path: string): ExportOptions {
   const size = renderSize(s, p);
+  const video = isVideo(s.format);
   return {
     path,
-    format: s.format === "wav" ? "wav" : s.codec === "hevc" ? "mp4-hevc" : "mp4-h264",
+    format: s.format === "mp4" ? (s.codec === "hevc" ? "mp4-hevc" : "mp4-h264") : s.format === "mov" ? "mov-prores" : s.format,
     width: size.width,
     height: size.height,
     fps: p.fps,
     quality: s.quality,
-    loudness: s.format === "wav" || s.includeAudio ? s.loudness : undefined,
+    loudness: !video || s.includeAudio ? s.loudness : undefined,
     rangeOnly: s.rangeOnly && playRange(p) !== undefined,
-    includeAudio: s.format === "wav" ? true : s.includeAudio,
-    reframe: s.format === "mp4" && crops(s, p) ? reframeOffset(s, p) : undefined,
+    includeAudio: video ? s.includeAudio : true,
+    reframe: video && crops(s, p) ? reframeOffset(s, p) : undefined,
+    ...(s.format === "mov" ? { proresProfile: s.prores } : {}),
+    ...(s.format === "mp3" ? { mp3Kbps: s.mp3Kbps } : {}),
   };
 }

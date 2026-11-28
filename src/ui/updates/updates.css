@@ -1,0 +1,34 @@
+/* The update alert and status boxes (§6.1), on top of alerts.css. Just under app alerts, so an
+   "unsaved changes" alert raised while installing shows above them. */
+.pe-update-scrim { z-index: 990; }
+.pe-alert.pe-update { width: 420px; }
+.pe-alert.pe-update.wide { width: 540px; }
+.pe-alert.pe-update .pe-alert-body { gap: 8px; }
+
+/* What's new: no box and no scrolling (only a very long list scrolls, rather than leave the window). */
+.pe-update-changes { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; max-height: 46vh; overflow-y: auto; }
+.pe-update-changes-title { font-size: 11px; font-weight: 600; color: var(--text); }
+.pe-update-changes ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.pe-update-changes li {
+  position: relative; padding-left: 12px;
+  font-size: 11px; line-height: 1.4; color: var(--text-dim); overflow-wrap: anywhere; user-select: text;
+}
+.pe-update-changes li::before { content: "•"; position: absolute; left: 0; }
+
+.pe-update-auto { margin-top: 8px; font-size: 11.5px; }
+
+.pe-update-progress {
+  position: relative; height: 6px; margin: 6px 0 2px; border-radius: 3px; overflow: hidden;
+  background: rgba(var(--ink-rgb), 0.1);
+}
+.pe-update-progress > div { height: 100%; border-radius: 3px; background: var(--text-dim); transition: width 120ms linear; }
+.pe-update-progress.indeterminate > div {
+  position: absolute; inset: 0 auto 0 0; width: 34%;
+  animation: pe-update-sweep 1.2s ease-in-out infinite;
+}
+@keyframes pe-update-sweep { from { left: -34%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .pe-update-progress.indeterminate > div { animation: none; left: 0; width: 100%; opacity: 0.45; }
+}
+.pe-update-status { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.pe-update-detail { font-size: 11px; line-height: 1.4; color: var(--text-faint); overflow-wrap: anywhere; user-select: text; }

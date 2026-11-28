@@ -1,10 +1,13 @@
 // The export sheet (docs/spec/04-ui.md §1.7): name, folder, range, format, resolution, shape (with a
 // draggable crop), codec, quality and loudness on the left; a preview, output size and file-size
 // estimate on the right. Export queues a background job (title-bar pill) and closes the sheet.
+// Beyond Editroom's MP4 and WAV: ProRes Video (a MOV; the codec menu picks the ProRes) and MP3 Audio
+// (with a bit rate), offered when the bundled FFmpeg has their encoders.
 
 import { useEffect, useRef, useState } from "react";
 import { call } from "../api";
 import { engine } from "../engine";
+import { backend, type Encoders } from "../engine/backend";
 import type { Snapshot } from "../model";
 import { store, useStore } from "../store";
 import { playRange, projectDuration, shortTime } from "../timing";
@@ -14,8 +17,8 @@ import { Glyph } from "./icons";
 import { openMenu, SEP, type MenuItem } from "./menu";
 import { queueExport } from "./export/queue";
 import {
-  crops, cropWindow, defaultSettings, engineOptions, estimatedSize, extension, kindLabel, LOUDNESS, loudnessLabel, renderSize,
-  resolutions, SHAPES, type ExportSettings,
+  crops, cropWindow, defaultSettings, engineOptions, estimatedSize, extension, FORMATS, formatLabel, isVideo as hasPicture, kindLabel,
+  LOUDNESS, loudnessLabel, MP3_RATES, PRORES, proresLabel, renderSize, resolutions, SHAPES, type ExportSettings, type Format,
 } from "./export/settings";
 import { dirName, pickFolder } from "./shell/files";
 import * as playback from "./shell/playback";
@@ -38,6 +41,8 @@ export function ExportSheet() {
   const [folder, setFolder] = useState<string>("");
   const [dirs, setDirs] = useState<Dirs>({});
   const [failure, setFailure] = useState<string>();
+  /** Undefined until known (everything is offered meanwhile; the export itself says if it can't). */
+  const [encoders, setEncoders] = useState<Encoders>();
   const nameInput = useRef<HTMLInputElement>(null);
   const update = (p: Partial<ExportSettings>) => setSettings((s) => ({ ...s, ...p }));
   const close = () => store().set({ exportOpen: false });
@@ -45,6 +50,7 @@ export function ExportSheet() {
   // Where it goes: last export folder if it's still there, else beside the project file, else the Desktop.
   useEffect(() => {
     playback.pause();
+    backend.exportEncoders().then(setEncoders, () => {});
     (async () => {
       const d = await call<Dirs>("user_dirs").catch(() => ({} as Dirs));
       setDirs(d);
@@ -56,7 +62,7 @@ export function ExportSheet() {
   }, []);
 
   const range = playRange(project);
-  const isVideo = settings.format === "mp4";
+  const isVideo = hasPicture(settings.format);
   const size = renderSize(settings, project);
   const duration = projectDuration(project);
 
@@ -78,7 +84,7 @@ export function ExportSheet() {
     }
     await store().commitLive();
     const p = store().project;
-    if (settings.format === "wav" && !p.clips.some((c) => c.kind === "audio")) {
+    if (!isVideo && !p.clips.some((c) => c.kind === "audio")) {
       setFailure("There's no audio on the timeline.");
       return;
     }
@@ -103,6 +109,10 @@ export function ExportSheet() {
   const home = dirs.home;
   const shownFolder = home && folder.startsWith(home) ? "~" + folder.slice(home.length) : folder;
   const resList = resolutions(settings, project);
+  const available = (f: Format) => !encoders || (f === "mov" ? encoders.prores != null : f === "mp3" ? encoders.mp3 : true);
+  const formatItem = ([f, label]: [Format, string]): MenuItem => ({
+    label, checked: settings.format === f, enabled: available(f), action: () => update({ format: f }),
+  });
 
   return (
     <div className="pe-sheet-scrim" data-modal-open onPointerDown={(e) => e.stopPropagation()}>
@@ -135,9 +145,8 @@ export function ExportSheet() {
               </Row>
             )}
             <Row label="Format">
-              <Menu label={isVideo ? "MP4 Video" : "WAV Audio"} symbol={isVideo ? "film" : "waveform"} accent={isVideo} onOpen={menu([
-                { label: "MP4 Video", checked: isVideo, action: () => update({ format: "mp4" }) },
-                { label: "WAV Audio", checked: !isVideo, action: () => update({ format: "wav" }) },
+              <Menu label={formatLabel(settings.format)} symbol={isVideo ? "film" : "waveform"} accent={isVideo} onOpen={menu([
+                ...FORMATS.filter(([f]) => hasPicture(f)).map(formatItem), SEP, ...FORMATS.filter(([f]) => !hasPicture(f)).map(formatItem),
               ])} />
             </Row>
             {isVideo && (
@@ -152,19 +161,37 @@ export function ExportSheet() {
                     SHAPES.map(([s, label]) => ({ label, checked: s === settings.shape, action: () => update({ shape: s, reframe: { x: 0.5, y: 0.5 } }) })),
                   )} />
                 </Row>
-                <Row label="Codec">
-                  <Menu label={settings.codec === "hevc" ? "HEVC" : "H.264"} onOpen={menu([
-                    { label: "H.264", checked: settings.codec === "h264", action: () => update({ codec: "h264" }) },
-                    { label: "HEVC", checked: settings.codec === "hevc", action: () => update({ codec: "hevc" }) },
-                  ])} />
-                </Row>
-                <Row label="Quality">
-                  <Menu label={settings.quality === "high" ? "High" : "Web"} onOpen={menu([
-                    { label: "High", checked: settings.quality === "high", action: () => update({ quality: "high" }) },
-                    { label: "Web", checked: settings.quality === "web", action: () => update({ quality: "web" }) },
-                  ])} />
-                </Row>
+                {settings.format === "mov" ? (
+                  // The ProRes is the quality: no separate Quality row.
+                  <Row label="Codec">
+                    <Menu label={proresLabel(settings.prores)} onOpen={menu(
+                      PRORES.map(([v, label]) => ({ label, checked: settings.prores === v, action: () => update({ prores: v }) })),
+                    )} />
+                  </Row>
+                ) : (
+                  <>
+                    <Row label="Codec">
+                      <Menu label={settings.codec === "hevc" ? "HEVC" : "H.264"} onOpen={menu([
+                        { label: "H.264", checked: settings.codec === "h264", action: () => update({ codec: "h264" }) },
+                        { label: "HEVC", checked: settings.codec === "hevc", action: () => update({ codec: "hevc" }) },
+                      ])} />
+                    </Row>
+                    <Row label="Quality">
+                      <Menu label={settings.quality === "high" ? "High" : "Web"} onOpen={menu([
+                        { label: "High", checked: settings.quality === "high", action: () => update({ quality: "high" }) },
+                        { label: "Web", checked: settings.quality === "web", action: () => update({ quality: "web" }) },
+                      ])} />
+                    </Row>
+                  </>
+                )}
               </>
+            )}
+            {settings.format === "mp3" && (
+              <Row label="Bit rate">
+                <Menu label={`${settings.mp3Kbps} kbps`} onOpen={menu(
+                  MP3_RATES.map((k) => ({ label: `${k} kbps`, checked: settings.mp3Kbps === k, action: () => update({ mp3Kbps: k }) })),
+                )} />
+              </Row>
             )}
             <Row label="Audio">
               <Menu label={isVideo && !settings.includeAudio ? "No audio" : loudnessLabel(settings.loudness)} onOpen={menu([
@@ -186,7 +213,7 @@ export function ExportSheet() {
                   <Stat text={fpsLabel(project.fps)} />
                 </>
               ) : (
-                <Stat symbol="waveform" text="48 kHz · 24-bit" />
+                <Stat symbol="waveform" text={settings.format === "mp3" ? `48 kHz · ${settings.mp3Kbps} kbps` : "48 kHz · 24-bit"} />
               )}
               <span className="sep" />
               <Stat symbol="doc" text={estimatedSize(settings, project)} />
@@ -243,7 +270,7 @@ function PreviewBox({ settings, setReframe }: { settings: ExportSettings; setRef
   const playhead = useStore((s) => s.playhead);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState(false);
-  const isVideo = settings.format === "mp4";
+  const isVideo = hasPicture(settings.format);
   const aspect = project.width / Math.max(1, project.height);
   const pw = Math.min(PREVIEW_W, PREVIEW_H * aspect), ph = pw / aspect;
 
@@ -284,11 +311,28 @@ function PreviewBox({ settings, setReframe }: { settings: ExportSettings; setRef
       ) : (
         <Glyph symbol="waveform" size={30} weight="light" style={{ color: "var(--text-faint)" }} />
       )}
+      {isVideo && <UpscaleBadge settings={settings} />}
       {(playing || hover) && <ScrubBar progress={progress} onSeek={seek} />}
       {(!playing || hover) && (
         <span className="big-play"><Glyph symbol={playing ? "pause.fill" : "play.fill"} size={26} weight="bold" /></span>
       )}
     </div>
+  );
+}
+
+/**
+ * "Upscaled from 1080p" over the preview when the export is bigger than the sequence: its video is
+ * enlarged by the upscaler (sharpened as it's enlarged), not stretched (spec 02-engine §12).
+ */
+function UpscaleBadge({ settings }: { settings: ExportSettings }) {
+  const project = useStore((s) => s.project);
+  const size = renderSize(settings, project);
+  if (!engine.canUpscale?.() || Math.max(size.width, size.height) <= Math.max(project.width, project.height) + 1) return null;
+  return (
+    <span className="pe-upscaled">
+      <Glyph symbol="arrow.up.left.and.arrow.down.right" size={9.5} weight="semibold" />
+      Upscaled from {Math.min(project.width, project.height)}p
+    </span>
   );
 }
 

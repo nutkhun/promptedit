@@ -15,7 +15,7 @@ import { clipEnd, editPoints, isLocked, linked, playRange, playsSource, previous
 import * as files from "./ui/shell/files";
 import * as playback from "./ui/shell/playback";
 import { revealInMedia, revealableAsset } from "./ui/shell/reveal";
-import { removePickedMedia } from "./ui/shell/media";
+import { hasMediaPicks, removePickedMedia } from "./ui/shell/media";
 import { useCaptions } from "./timeline/captions";
 import { deleteSelectedCaptions } from "./captions/actions";
 
@@ -298,7 +298,7 @@ const standardFps = (fps: number) => {
 };
 
 export const can = {
-  delete: () => S().selection.size > 0 || S().mediaSelection.size > 0 || useCaptions.getState().selection.size > 0,
+  delete: () => S().selection.size > 0 || hasMediaPicks() || useCaptions.getState().selection.size > 0,
   split: () => { const s = S(); return s.project.clips.some((c) => c.start < s.playhead && clipEnd(c) > s.playhead && !isLocked(s.project, c.trackID)); },
   addDissolve: () => dissolveTarget() !== undefined,
   detachAudio: () => selectedClips().some((c) => c.linkID != null),
@@ -354,7 +354,7 @@ export const clipActions = {
   },
   async delete(ripple: boolean) {
     // Media's picks come before the timeline's, as in Editroom.
-    if (S().mediaSelection.size > 0) return removePickedMedia();
+    if (hasMediaPicks()) return removePickedMedia();
     const s = S();
     // Captions picked (and no clips): their words are left out.
     if (s.selection.size === 0 && useCaptions.getState().selection.size > 0) return deleteSelectedCaptions();

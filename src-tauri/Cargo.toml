@@ -40,8 +40,21 @@ reqwest = { version = "0.13", features = ["rustls", "stream", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tauri-plugin-dialog = "2"
 
+# Linked folders (src/folders.rs): follow the folders on disk (FSEvents, ReadDirectoryChangesW, inotify).
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+
+# Automatic updates from GitHub Releases (src/updates.rs), and relaunching after one installs.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
 # Speech to text on this computer (src/transcribe): whisper.cpp, built from source by whisper-rs-sys.
 whisper-rs = "0.16"
+
+# What's in the picture (src/scenes): CLIP on ONNX Runtime, linked statically from the prebuilt
+# libraries `ort` downloads at build time for each target (macOS arm64, Windows x64, Linux x64), so
+# the app needs no runtime library beside it. Pinned: ort's API changes between release candidates.
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "tls-native"] }
+sha2 = "0.10"
 
 # Metal (GPU) for whisper on Macs; Windows and Linux run it on the CPU.
 [target.'cfg(target_os = "macos")'.dependencies]

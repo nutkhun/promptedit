@@ -160,7 +160,15 @@ export interface Probe {
   audioChannels?: number;
   colorPrimaries?: string;
   colorTransfer?: string;
+  /** ffprobe's `color_space` (the Y′CbCr matrix, e.g. "bt2020nc") and `color_range` ("tv"/"pc"). */
+  colorMatrix?: string;
+  colorRange?: string;
+  /** How the picture is encoded (spec 02-engine §3.7); Apple Log is found in the file's sample description. */
+  sourceColor?: SourceColorKind;
 }
+
+/** Editroom `SourceColor`: Rec.709 as is, HDR (HLG, PQ), or Apple Log (Rec.2020) / Log 2 (Apple Wide Gamut). */
+export type SourceColorKind = "standard" | "hlg" | "pq" | "appleLog" | "appleLog2";
 
 // ---- Edits (crates/core/src/edit.rs `Edit`) ----
 
@@ -216,7 +224,8 @@ export type Edit =
   | { op: "setSequence"; width: number; height: number }
   | { op: "setFps"; fps: number }
   | { op: "matchSequence"; asset: Id }
-  | { op: "removeAssets"; ids: Id[] }
+  /** `folders`: Media panel folders (linked folders or folders inside them, by path) going too. */
+  | { op: "removeAssets"; ids: Id[]; folders?: string[] }
   | { op: "addMarker"; playhead: number }
   | { op: "updateMarker"; marker: Marker }
   | { op: "removeMarker"; id: Id }
@@ -249,6 +258,12 @@ export interface ImportResult {
   added: Id[];
   probes: [Id, Probe][];
   failed: string[];
+  /** Linked folders this import started following. */
+  linked?: string[];
+  /** A folder brought in that was already inside a linked one: Media opens it. */
+  opened?: string | null;
+  /** Names of folders brought in that had no media in them. */
+  empty?: string[];
 }
 
 export const DEFAULT_CLIP_COLOR: RGBA = { r: 0.16, g: 0.16, b: 0.2, a: 1 };

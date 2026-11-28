@@ -2,12 +2,15 @@
 // frame by frame into an offscreen WebGL2 canvas at the output size; our own RGB→Y′CbCr (BT.709,
 // limited range); WebCodecs H.264/HEVC at Editroom's bit rates and 2-second key-frame interval.
 // The sound is mixed with the playback mixer at 48 kHz, measured (BS.1770) and normalised in Rust,
-// which muxes everything into a faststart MP4 (or writes a 24-bit WAV).
+// which muxes everything into a faststart MP4 (or writes a 24-bit WAV, or encodes an MP3).
+// ProRes (MOV), which WebCodecs can't make: the same frames packed as 10-bit 4:2:2 and encoded by
+// FFmpeg as they arrive (./prores.ts), with the sound as 24-bit PCM.
 
 import type { ExportOptions, ExportProgress } from "../index";
 import type { Project } from "../../model";
 import { asset as assetOf, clipEnd, isAudible, playRange, projectDuration } from "../../timing";
 import { backend, toBase64 } from "../backend";
+import { ProresSink } from "./prores";
 import { Media } from "../decode/media";
 import { Compositor, type Frame } from "../gl/compositor";
 import { frameDuration, reframeCanvas } from "../geometry";
@@ -113,6 +116,7 @@ export class Exporter {
   private cancelled = false;
   private job?: number;
   private encoder?: VideoEncoder;
+  private prores?: ProresSink;
 
   constructor(private deps: ExportDeps) {}
 
@@ -131,13 +135,20 @@ export class Exporter {
     const media = new Media(() => {}, () => project);
     try {
       report(0, "preparing");
-      if (o.format === "mov-prores" || o.format === "mp3") throw new Error(`${o.format === "mp3" ? "MP3" : "ProRes"} export isn't available yet.`);
-      const audioOnly = o.format === "wav";
+      const audioOnly = o.format === "wav" || o.format === "mp3";
+      const prores = o.format === "mov-prores";
+      if (prores || o.format === "mp3") {
+        // Before any work: these need encoders FFmpeg may not have.
+        const enc = await backend.exportEncoders();
+        if (prores && !enc.prores) throw new Error("ProRes export isn't available: this copy of FFmpeg has no ProRes encoder.");
+        if (o.format === "mp3" && !enc.mp3) throw new Error("MP3 export isn't available: this copy of FFmpeg has no MP3 encoder.");
+      }
       const total = projectDuration(project);
       const [lo, hi] = o.rangeOnly ? playRange(project) ?? [0, total] : [0, total];
       const duration = hi - lo;
       if (!(duration > 0)) throw new Error("There's nothing to export.");
-      const hasAudio = project.clips.some((c) => c.kind === "audio" && c.start < hi && clipEnd(c) > lo &&
+      // A movie can leave its sound out (Audio › "No audio").
+      const hasAudio = (audioOnly || o.includeAudio !== false) && project.clips.some((c) => c.kind === "audio" && c.start < hi && clipEnd(c) > lo &&
         project.audioTracks.some((t) => t.id === c.trackID && isAudible(project, t)));
       if (audioOnly && !hasAudio) throw new Error("There's no sound to export.");
 
@@ -159,14 +170,16 @@ export class Exporter {
       // 2. The picture.
       const fd = frameDuration(o.fps > 0 ? o.fps : project.fps);
       if (!audioOnly) {
-        await this.renderVideo(project, media, o, lo, duration, fd, (f) => report(0.1 + f * 0.85, "rendering"));
+        await this.renderVideo(project, media, o, lo, duration, fd, gainDb, (f) => report(0.1 + f * 0.85, "rendering"));
       }
       this.check();
 
       report(0.96, "finishing");
       const hevc = o.format === "mp4-hevc";
-      await backend.exportFinish(this.job, audioOnly
-        ? { container: "wav", gainDb }
+      await backend.exportFinish(this.job, o.format === "wav" ? { container: "wav", gainDb }
+        : o.format === "mp3" ? { container: "mp3", audioKbps: o.mp3Kbps ?? 320, gainDb }
+        // The gain went into the movie's sound when the encoder started.
+        : prores ? { container: "mov" }
         : { container: "mp4", codec: hevc ? "hevc" : "h264", fpsNum: fd.den, fpsDen: fd.num, audioKbps: o.quality === "high" ? 256 : 160, gainDb });
       this.job = undefined;
       report(1, "done");
@@ -236,7 +249,7 @@ export class Exporter {
   }
 
   private async renderVideo(p: Project, media: Media, o: ExportOptions, lo: number, duration: number,
-    fd: { num: number; den: number }, progress: (f: number) => void) {
+    fd: { num: number; den: number }, gainDb: number, progress: (f: number) => void) {
     const outW = Math.max(2, Math.round(o.width / 2) * 2), outH = Math.max(2, Math.round(o.height / 2) * 2);
     const center = o.reframe ? { x: 0.5 + o.reframe.x / 2, y: 0.5 + o.reframe.y / 2 } : { x: 0.5, y: 0.5 };
     const { canvas, offset } = reframeCanvas({ width: p.width, height: p.height }, { width: outW, height: outH }, center);
@@ -247,19 +260,26 @@ export class Exporter {
     const comp = new Compositor(gl);
     const hevc = o.format === "mp4-hevc";
     const fps = fd.den / fd.num;
-    const config = await encoderConfig(outW, outH, fps, videoBitrate(outW, outH, fps, o.quality, hevc), hevc);
+    if (o.format === "mov-prores") {
+      const sink = await ProresSink.start(gl, this.job!, { width: outW, height: outH, fpsNum: fd.den, fpsDen: fd.num, profile: o.proresProfile ?? "standard", gainDb });
+      this.prores = sink;
+    }
+    const config = this.prores ? undefined : await encoderConfig(outW, outH, fps, videoBitrate(outW, outH, fps, o.quality, hevc), hevc);
     const up = new Uplink(this.job!, "video");
     let encodeError: unknown;
-    const encoder = new VideoEncoder({
+    // ProRes needs no WebCodecs at all (so it works where the webview can't encode video).
+    const encoder = config ? new VideoEncoder({
       output: (chunk) => {
         const bytes = new Uint8Array(chunk.byteLength);
         chunk.copyTo(bytes);
         up.push(bytes);
       },
       error: (e) => { encodeError = e; },
-    });
-    this.encoder = encoder;
-    encoder.configure(config);
+    }) : undefined;
+    if (encoder && config) {
+      this.encoder = encoder;
+      encoder.configure(config);
+    }
     const n = Math.max(1, Math.ceil(duration / (fd.num / fd.den) - 1e-6));
     const gop = Math.round(fps * 2);
     const frameUs = (fd.num / fd.den) * 1e6;
@@ -272,23 +292,39 @@ export class Exporter {
         const r = await resolveLayers(layersAt(p, t), media, this.deps.baker, canvas, "sequential", "export:");
         // Captions on top of every video track, in the output frame (after the reframe crop).
         const caption = captionDrawLayer(p, t, frame);
-        comp.render(caption ? [...r.layers, caption] : r.layers, frame);
+        // Video drawn bigger than its pixels (a 1080p clip in a 4K export) is upscaled, not stretched (§12).
+        comp.render(caption ? [...r.layers, caption] : r.layers, frame, { upscale: true });
         for (const f of r.frames) f.close();
+        if (this.prores) {
+          await this.prores.push(comp.output!.tex);
+          progress((k + 1) / n);
+          continue;
+        }
+        const enc = encoder!;
         const yuv = comp.readI420();
         const vf = new VideoFrame(yuv.data, {
           format: "I420", codedWidth: outW, codedHeight: outH, timestamp: Math.round(k * frameUs), duration: Math.round(frameUs),
           layout: yuv.layout, colorSpace: { primaries: "bt709", transfer: "bt709", matrix: "bt709", fullRange: false },
         });
-        encoder.encode(vf, { keyFrame: k % gop === 0 });
+        enc.encode(vf, { keyFrame: k % gop === 0 });
         vf.close();
-        while (encoder.encodeQueueSize > 3) await new Promise((res) => encoder.addEventListener("dequeue", res, { once: true }));
+        while (enc.encodeQueueSize > 3) await new Promise((res) => enc.addEventListener("dequeue", res, { once: true }));
         if (up.inflight > 2) await up.drain();
         progress((k + 1) / n);
       }
-      await encoder.flush();
+      if (this.prores) {
+        await this.prores.drain();
+        const t = this.prores.timing;
+        console.info(`ProRes export: ${t.frames} frames, ${(t.packMs / t.frames).toFixed(1)} ms packing, ${(t.waitMs / t.frames).toFixed(1)} ms waiting for sends a frame`);
+      } else {
+        await encoder!.flush();
+      }
       if (encodeError) throw encodeError;
       await up.drain();
     } finally {
+      this.prores?.dispose();
+      this.prores = undefined;
+      try { if (encoder && encoder.state !== "closed") encoder.close(); } catch { /* closed */ }
       comp.dispose();
     }
   }

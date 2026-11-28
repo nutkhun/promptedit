@@ -1,20 +1,41 @@
 // The WebGL2 compositor: one pass per layer, premultiplied source-over (`ONE, ONE_MINUS_SRC_ALPHA`)
 // on a black base, on gamma-encoded values with bilinear sampling and no mipmaps, exactly the
 // per-layer order of Editroom's TimelineCompositor (docs/spec/02-engine.md §1.2):
-// fit → wipe crop → clip transform → grade cube → opacity → over.
-// The viewer and export use this same code, so what you see is what you export.
+// fit (export: upscaler) → source colour (HDR/Log → 709) → wipe crop → clip transform → grade cube →
+// opacity → over. The viewer and export use this same code, so what you see is what you export.
+
+import type { YuvPlanes } from "../color/planes";
+import { SOURCE_CUBE_SIZE } from "../color/source-color";
+import { compile, uniforms, VERT, type Uniforms } from "./program";
+import { Upscaler } from "./upscale";
+import { YuvPass } from "./yuv-pass";
 
 export type Rotation = 0 | 90 | 180 | 270;
 
 /** A layer ready to draw: its picture and where it sits on the canvas (pre-transform, y down). */
 export interface DrawLayer {
   picture:
-    | { kind: "texture"; source: TexImageSource; key?: object | string; width: number; height: number; rotation: Rotation; rect: Rect }
+    | {
+      kind: "texture"; source: TexImageSource; key?: object | string; width: number; height: number; rotation: Rotation; rect: Rect;
+      /** A video frame (the export upscaler only enlarges video, §12). */
+      video?: boolean;
+      /** Upload at half float: HDR/Log frames whose raw planes the browser won't hand over. */
+      float?: boolean;
+    }
+    /** Raw decoder planes (HDR/Log sources): our own Y′CbCr → R′G′B′ (color/planes.ts). Always video. */
+    | { kind: "planes"; planes: YuvPlanes; width: number; height: number; rotation: Rotation; rect: Rect }
     | { kind: "solid"; color: [number, number, number, number] };
   opacity: number;
   wipe?: number;
   transform?: { scale: number; x: number; y: number };
   cube?: Float32Array;
+  /** The source's 64³ conversion to Rec.709 (§3.7), sampled after the fit and before `cube`. */
+  sourceCube?: Float32Array;
+}
+
+export interface RenderOptions {
+  /** Export: video drawn bigger than its own pixels is enlarged by the upscaler, not stretched (§12). */
+  upscale?: boolean;
 }
 
 export interface Rect { x: number; y: number; width: number; height: number }
@@ -28,11 +49,6 @@ export interface Frame {
   offsetX: number;
   offsetY: number;
 }
-
-const VERT = `#version 300 es
-in vec2 aPos;
-out vec2 vUV;
-void main() { vUV = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
 const LAYER_FRAG = `#version 300 es
 precision highp float;
@@ -50,6 +66,9 @@ uniform vec4 uColor;      // premultiplied
 uniform sampler2D uTex;
 uniform sampler3D uLut;
 uniform bool uHasLut;
+uniform highp sampler3D uSrcLut;
+uniform bool uHasSrcLut;
+uniform float uSrcN;
 uniform float uOpacity;
 out vec4 fragColor;
 void main() {
@@ -71,6 +90,10 @@ void main() {
     else if (uRot == 2) st = vec2(1.0 - uv.x, 1.0 - uv.y);
     else if (uRot == 3) st = vec2(1.0 - uv.y, uv.x);
     col = texture(uTex, st);
+    if (uHasSrcLut) {
+      // Source colour to Rec.709, on the fitted picture (video is opaque, so no un-premultiply).
+      col.rgb = texture(uSrcLut, clamp(col.rgb, 0.0, 1.0) * ((uSrcN - 1.0) / uSrcN) + 0.5 / uSrcN).rgb * col.a;
+    }
   }
   if (uHasLut) {
     // The cube works on un-premultiplied colour so transparent pixels stay transparent.
@@ -120,28 +143,6 @@ void main() {
   fragColor = v;
 }`;
 
-function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
-  const make = (type: number, src: string) => {
-    const s = gl.createShader(type)!;
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(`Shader: ${gl.getShaderInfoLog(s)}`);
-    return s;
-  };
-  const p = gl.createProgram()!;
-  gl.attachShader(p, make(gl.VERTEX_SHADER, vs));
-  gl.attachShader(p, make(gl.FRAGMENT_SHADER, fs));
-  gl.bindAttribLocation(p, 0, "aPos");
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`Program: ${gl.getProgramInfoLog(p)}`);
-  return p;
-}
-
-type Uniforms = Record<string, WebGLUniformLocation | null>;
-function uniforms(gl: WebGL2RenderingContext, p: WebGLProgram, names: string[]): Uniforms {
-  return Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(p, n)]));
-}
-
 export class Compositor {
   private layerProg: WebGLProgram;
   private blitProg: WebGLProgram;
@@ -157,12 +158,14 @@ export class Compositor {
   private luts = new WeakMap<Float32Array, WebGLTexture>();
   private frameNo = 0;
   private floatTarget: boolean;
+  private yuv?: YuvPass;
+  private upscaler?: Upscaler;
 
   constructor(readonly gl: WebGL2RenderingContext) {
     this.floatTarget = !!gl.getExtension("EXT_color_buffer_float") || !!gl.getExtension("EXT_color_buffer_half_float");
     this.layerProg = compile(gl, VERT, LAYER_FRAG);
     this.blitProg = compile(gl, VERT, BLIT_FRAG);
-    this.lu = uniforms(gl, this.layerProg, ["uCanvas", "uOffset", "uOutH", "uShift", "uScale", "uRect", "uRot", "uWipe", "uKind", "uColor", "uTex", "uLut", "uHasLut", "uOpacity"]);
+    this.lu = uniforms(gl, this.layerProg, ["uCanvas", "uOffset", "uOutH", "uShift", "uScale", "uRect", "uRot", "uWipe", "uKind", "uColor", "uTex", "uLut", "uHasLut", "uSrcLut", "uHasSrcLut", "uSrcN", "uOpacity"]);
     this.bu = uniforms(gl, this.blitProg, ["uTex"]);
     this.quad = gl.createVertexArray()!;
     gl.bindVertexArray(this.quad);
@@ -226,7 +229,7 @@ export class Compositor {
   }
 
   /** Uploads a picture: cached by `key` (stills, text), or into a per-slot scratch texture (video). */
-  private upload(slot: number, source: TexImageSource, key?: object | string): WebGLTexture {
+  private upload(slot: number, source: TexImageSource, key?: object | string, float = false): WebGLTexture {
     const gl = this.gl;
     if (key !== undefined) {
       const hit = this.cached.get(key);
@@ -235,16 +238,61 @@ export class Compositor {
     const tex = key !== undefined ? this.texture() : (this.scratch[slot] ??= this.texture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    // With colour conversion off, Chromium converts Y′CbCr with the frame's matrix and leaves the
+    // curve alone; half float keeps 10-bit steps that 8-bit would merge.
+    if (float && this.floatTarget) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, source);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     if (key !== undefined) this.cached.set(key, { tex, used: this.frameNo });
     return tex;
   }
 
+  /** Whether export can upscale here (a half-float target; Editroom: MetalFX available). */
+  get canUpscale(): boolean {
+    return this.floatTarget;
+  }
+
+  /**
+   * A layer's picture as a texture and where it sits: uploaded (or converted from raw planes), and
+   * on export enlarged by the upscaler when it's drawn bigger than its own pixels (§1.2 step 3).
+   * These passes use their own framebuffers, so they all run before the layers are drawn.
+   */
+  private prepare(l: DrawLayer, slot: number, f: Frame, o: RenderOptions): { tex: WebGLTexture; rect: Rect } | undefined {
+    const p = l.picture;
+    if (p.kind === "solid") return undefined;
+    let tex: WebGLTexture;
+    let srcW: number, srcH: number;
+    if (p.kind === "planes") {
+      this.yuv ??= new YuvPass(this.gl, this.quad, () => this.floatTarget);
+      tex = this.yuv.convert(slot, p.planes);
+      srcW = p.planes.width; srcH = p.planes.height;
+    } else {
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      tex = this.upload(slot, p.source, p.key, p.float);
+      // The texture's own size, unrotated.
+      [srcW, srcH] = p.rotation % 180 === 0 ? [p.width, p.height] : [p.height, p.width];
+    }
+    const video = p.kind === "planes" || p.video;
+    const s = p.rect.width / Math.max(1, p.width);
+    if (o.upscale && video && s > 1.01 && this.floatTarget) {
+      const [tw, th] = p.rotation % 180 === 0 ? [p.width, p.height] : [p.height, p.width];
+      const ow = Math.round(tw * s), oh = Math.round(th * s);
+      this.upscaler ??= new Upscaler(this.gl, this.quad, () => this.floatTarget);
+      if (this.upscaler.can(srcW, srcH, ow, oh)) {
+        tex = this.upscaler.run(tex, srcW, srcH, ow, oh, slot);
+        // Enlarged with detail rebuilt, then centred as the plain fit would be.
+        const [rw, rh] = p.rotation % 180 === 0 ? [ow, oh] : [oh, ow];
+        return { tex, rect: { x: (f.canvasWidth - rw) / 2, y: (f.canvasHeight - rh) / 2, width: rw, height: rh } };
+      }
+    }
+    return { tex, rect: p.rect };
+  }
+
   /** Draws the layers (bottom first) over black into the internal target at the output size. */
-  render(layers: DrawLayer[], f: Frame) {
+  render(layers: DrawLayer[], f: Frame, options: RenderOptions = {}) {
     const gl = this.gl;
     this.frameNo++;
+    const prepared = layers.map((l, slot) => (l.opacity > 0.001 ? this.prepare(l, slot, f, options) : undefined));
     const t = this.target(f.outWidth, f.outHeight);
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
     gl.viewport(0, 0, f.outWidth, f.outHeight);
@@ -261,6 +309,8 @@ export class Compositor {
     gl.uniform1f(u.uOutH, f.outHeight);
     gl.uniform1i(u.uTex, 0);
     gl.uniform1i(u.uLut, 1);
+    gl.uniform1i(u.uSrcLut, 2);
+    gl.uniform1f(u.uSrcN, SOURCE_CUBE_SIZE);
     layers.forEach((l, slot) => {
       if (l.opacity <= 0.001) return;
       const tf = l.transform ?? { scale: 1, x: 0, y: 0 };
@@ -273,14 +323,24 @@ export class Compositor {
         const [r, g, b, a] = l.picture.color;
         gl.uniform1i(u.uKind, 1);
         gl.uniform4f(u.uColor, r * a, g * a, b * a, a);
+        // Not sampled, but whatever is bound must match the sampler's type.
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, null);
       } else {
         const p = l.picture;
+        const ready = prepared[slot];
+        if (!ready) return;
         gl.uniform1i(u.uKind, 0);
         gl.activeTexture(gl.TEXTURE0);
-        const tex = this.upload(slot, p.source, p.key);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.uniform4f(u.uRect, p.rect.x, p.rect.y, p.rect.width, p.rect.height);
+        gl.bindTexture(gl.TEXTURE_2D, ready.tex);
+        gl.uniform4f(u.uRect, ready.rect.x, ready.rect.y, ready.rect.width, ready.rect.height);
         gl.uniform1i(u.uRot, p.rotation / 90);
+      }
+      gl.uniform1i(u.uHasSrcLut, l.sourceCube && l.picture.kind !== "solid" ? 1 : 0);
+      if (l.sourceCube && l.picture.kind !== "solid") {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_3D, this.lut(l.sourceCube));
+        gl.activeTexture(gl.TEXTURE0);
       }
       gl.uniform1i(u.uHasLut, l.cube ? 1 : 0);
       if (l.cube) {
@@ -316,6 +376,14 @@ export class Compositor {
     gl.uniform1i(this.bu.uTex, 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
+  }
+
+  /**
+   * The last render's texture (bottom row first; half float where supported), for readbacks made
+   * elsewhere: the ProRes export packs it as 10-bit v210 (export/v210.ts).
+   */
+  get output(): { tex: WebGLTexture; w: number; h: number } | undefined {
+    return this.fbo;
   }
 
   /** Clears the default framebuffer to black (nothing to show). */
@@ -415,5 +483,9 @@ export class Compositor {
     this.cached.clear();
     for (const t of this.scratch) gl.deleteTexture(t);
     this.scratch = [];
+    this.yuv?.dispose();
+    this.yuv = undefined;
+    this.upscaler?.dispose();
+    this.upscaler = undefined;
   }
 }

@@ -10,6 +10,8 @@ import { MediaThumb } from "./MediaThumb";
 import { MiddleText } from "./MiddleText";
 import type { Snippet } from "../../captions/said";
 import "../../captions/captions.css";
+import { PlaceLine } from "./FolderItem";
+import "./pictureSearch.css";
 
 /** Drag payload type: a JSON array of asset ids, in the Media panel's order. */
 export const MEDIA_DRAG_TYPE = "application/x-promptedit-media";
@@ -27,6 +29,15 @@ export interface ItemProps {
   onMenu: (e: MouseEvent) => void;
   /** While searching what's said: the words around where it's said. */
   said?: Snippet;
+  /** While searching from a folder: the folder this result is in, when that's not the open one. */
+  place?: string;
+  /** While searching by plain words: what it shows that matched (its scene tags), not in its name. */
+  shows?: string[];
+}
+
+/** What a search result shows that the search found ("shows beach"), from its scene tags. */
+function ShowsLine({ shows }: { shows: string[] }) {
+  return <div className="pe-shows" title={`Shows ${shows.join(", ")}`}>shows <b>{shows.join(", ")}</b></div>;
 }
 
 /** What a clip says around the words searched for, those words in bold (Editroom `SaidLine`). */
@@ -80,7 +91,9 @@ export function AssetTile(p: ItemProps) {
         {asset.kind !== "image" && <span className="pe-duration mono">{shortTime(asset.duration)}</span>}
       </div>
       <MiddleText className="pe-tile-name" text={asset.name} />
+      {p.place && <PlaceLine place={p.place} />}
       {p.said && <SaidLine said={p.said} />}
+      {p.shows && <ShowsLine shows={p.shows} />}
     </div>
   );
 }
@@ -103,7 +116,9 @@ export function AssetRow(p: ItemProps & { thumbWidth: number }) {
       <div className="pe-row-text">
         <MiddleText className="pe-row-name" text={asset.name} />
         <div className="pe-row-detail mono">{detail(asset)}</div>
+        {p.place && <PlaceLine place={p.place} />}
         {p.said && <SaidLine said={p.said} />}
+        {p.shows && <ShowsLine shows={p.shows} />}
       </div>
     </div>
   );
